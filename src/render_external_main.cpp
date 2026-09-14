@@ -10,6 +10,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #ifdef _WIN32
@@ -50,7 +51,9 @@ Args parse_args(int argc, char** argv) {
                 << "  --capabilities PATH   generated AXM_RENDER_CAPABILITIES v1 evidence path\n\n"
                 << "Current experimental process convention:\n"
                 << "  RENDERER --capabilities CAPS\n"
-                << "  RENDERER REQUEST RECEIPT\n";
+                << "  RENDERER REQUEST RECEIPT\n\n"
+                << "Declared output/receipt/capability paths are cleared before their phase,\n"
+                << "then must be recreated as regular files by that child invocation.\n";
             std::exit(0);
         } else {
             throw std::invalid_argument("unknown or incomplete argument: " + arg);
@@ -77,6 +80,51 @@ void reject_path_collision(
     if (a == b) {
         throw std::invalid_argument(
             std::string(a_name) + " path must differ from " + b_name + " path");
+    }
+}
+
+void clear_declared_artifact_path(
+    const std::filesystem::path& path,
+    const char* label) {
+    std::error_code ec;
+    const std::filesystem::file_status status = std::filesystem::symlink_status(path, ec);
+    if (ec) {
+        throw std::runtime_error(
+            std::string("cannot inspect ") + label + " path before dispatch: " +
+            ec.message());
+    }
+    if (!std::filesystem::exists(status)) {
+        return;
+    }
+    if (std::filesystem::is_directory(status)) {
+        throw std::invalid_argument(
+            std::string(label) + " path must not be an existing directory");
+    }
+
+    if (!std::filesystem::remove(path, ec) || ec) {
+        throw std::runtime_error(
+            std::string("cannot clear pre-existing ") + label + " path: " +
+            (ec ? ec.message() : "remove returned false"));
+    }
+}
+
+void require_fresh_regular_artifact(
+    const std::filesystem::path& path,
+    const char* label) {
+    std::error_code ec;
+    const std::filesystem::file_status status = std::filesystem::symlink_status(path, ec);
+    if (ec) {
+        throw std::runtime_error(
+            std::string("cannot inspect produced ") + label + ": " + ec.message());
+    }
+    if (!std::filesystem::exists(status)) {
+        throw std::runtime_error(
+            std::string("external renderer did not produce ") + label);
+    }
+    if (std::filesystem::is_symlink(status) || !std::filesystem::is_regular_file(status)) {
+        throw std::runtime_error(
+            std::string("external renderer ") + label +
+            " must be a newly produced regular file");
     }
 }
 
@@ -179,10 +227,12 @@ int main(int argc, char** argv) {
         reject_path_collision(capabilities_path, "capabilities", output_path, "render output");
         reject_path_collision(capabilities_path, "capabilities", receipt_path, "receipt");
 
+        clear_declared_artifact_path(capabilities_path, "capability manifest");
         run_required(
             args.renderer_executable,
             {"--capabilities", args.capabilities_path},
             "capability-discovery");
+        require_fresh_regular_artifact(capabilities_path, "capability manifest");
 
         require_digest_unchanged(args.request_path, request_digest, "render request source");
         require_digest_unchanged(request.scene_path, scene_digest, "scene source");
@@ -201,13 +251,18 @@ int main(int argc, char** argv) {
                 "external renderer capabilities reject request: " + incompatibility);
         }
 
+        clear_declared_artifact_path(output_path, "render output");
+        clear_declared_artifact_path(receipt_path, "receipt");
         run_required(
             args.renderer_executable,
             {args.request_path, args.receipt_path},
             "render");
+        require_fresh_regular_artifact(output_path, "render output");
+        require_fresh_regular_artifact(receipt_path, "receipt");
 
         require_digest_unchanged(args.request_path, request_digest, "render request source");
         require_digest_unchanged(request.scene_path, scene_digest, "scene source");
+        require_fresh_regular_artifact(capabilities_path, "capability manifest");
         require_digest_unchanged(
             args.capabilities_path, capabilities_digest, "capability manifest");
 
