@@ -1,0 +1,8 @@
+# Cross-backend comparison request for the flat contract renderer.
+AXM_RENDER_REQUEST 1
+scene reference.axmscene
+backend axm.contract.cpu.flat
+width 320
+height 180
+format ppm-rgb8
+output contract-flat-reference.ppm

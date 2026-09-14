@@ -22,6 +22,10 @@ add_executable(axm-render src/main.cpp)
 target_link_libraries(axm-render PRIVATE axm_render_native)
 target_compile_features(axm-render PRIVATE cxx_std_20)
 
+add_executable(axm-render-compare src/render_compare_main.cpp)
+target_link_libraries(axm-render-compare PRIVATE axm_render_contracts)
+target_compile_features(axm-render-compare PRIVATE cxx_std_20)
+
 add_executable(native_library_smoke tests/native_library_smoke.cpp)
 target_link_libraries(native_library_smoke PRIVATE axm_render_native)
 target_compile_features(native_library_smoke PRIVATE cxx_std_20)
@@ -49,7 +53,7 @@ target_compile_features(contract_flat_renderer PRIVATE cxx_std_20)
 add_executable(state_residency_bench research/state-native-rendering/state_residency.cpp)
 target_compile_features(state_residency_bench PRIVATE cxx_std_20)
 
-foreach(target axm_render_contracts axm_render_native axm-render native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer state_residency_bench)
+foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer state_residency_bench)
   if (MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive-)
   else()
@@ -75,6 +79,11 @@ configure_file(
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/examples/contract-flat.axmrender
   ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmrender
+  COPYONLY
+)
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/examples/contract-flat-reference.axmrender
+  ${CMAKE_CURRENT_BINARY_DIR}/contract-flat-reference.axmrender
   COPYONLY
 )
 
@@ -128,6 +137,7 @@ add_test(
     ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmrender
     ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmreceipt
 )
+set_tests_properties(contract-flat-renderer-writes-pixels-and-receipt PROPERTIES FIXTURES_SETUP contract_flat_small_receipt)
 add_test(
   NAME contract-flat-renderer-rejects-native-backend
   COMMAND contract_flat_renderer
@@ -135,4 +145,39 @@ add_test(
     ${CMAKE_CURRENT_BINARY_DIR}/contract-flat-wrong-backend.axmreceipt
 )
 set_tests_properties(contract-flat-renderer-rejects-native-backend PROPERTIES WILL_FAIL TRUE)
+
+add_test(
+  NAME interop-native-reference-receipt
+  COMMAND axm-render
+    --request ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+    --receipt ${CMAKE_CURRENT_BINARY_DIR}/interop-native.axmreceipt
+)
+set_tests_properties(interop-native-reference-receipt PROPERTIES FIXTURES_SETUP interop_reference_receipts)
+add_test(
+  NAME interop-flat-reference-receipt
+  COMMAND contract_flat_renderer
+    ${CMAKE_CURRENT_BINARY_DIR}/contract-flat-reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-flat.axmreceipt
+)
+set_tests_properties(interop-flat-reference-receipt PROPERTIES FIXTURES_SETUP interop_reference_receipts)
+add_test(
+  NAME interop-compare-reference-receipts
+  COMMAND axm-render-compare
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-native.axmreceipt
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-flat.axmreceipt
+)
+set_tests_properties(interop-compare-reference-receipts PROPERTIES FIXTURES_REQUIRED interop_reference_receipts)
+add_test(
+  NAME interop-compare-rejects-different-dimensions
+  COMMAND axm-render-compare
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-native.axmreceipt
+    ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmreceipt
+)
+set_tests_properties(
+  interop-compare-rejects-different-dimensions
+  PROPERTIES
+    FIXTURES_REQUIRED "interop_reference_receipts;contract_flat_small_receipt"
+    WILL_FAIL TRUE
+)
+
 add_test(NAME state-native-residency-equivalence COMMAND state_residency_bench --self-test)

@@ -19,7 +19,11 @@
 - A separate `contract_adapter_probe` test client links only to `axm_render_contracts`, not to `axm_render_native`.
 - The contract adapter probe accepts only `axm.mock.contract-probe`, loads `AXM_RENDER_REQUEST 1` plus the referenced `AXM_SCENE 1`, computes the shared source-byte continuity digests, and reports the scene/request/receipt contract versions it consumed.
 - The contract adapter probe rejects a request selecting `axm.native.cpu.reference` rather than silently substituting its own backend identity.
-- The contract adapter probe explicitly reports `writes_pixels=NO`; it is evidence of a renderer-neutral integration boundary, not evidence of a second renderer output.
+- The contract adapter probe explicitly reports `writes_pixels=NO`; it is evidence of a renderer-neutral integration boundary, not evidence of renderer output.
+- The independent `contract_flat_renderer` links only to `axm_render_contracts`, accepts only backend `axm.contract.cpu.flat`, consumes the shared scene/request contracts, writes `ppm-rgb8` pixels, and emits an `AXM_RENDER_RECEIPT 1` naming its own renderer/backend identity.
+- The flat renderer deliberately uses ordered XY triangle fill with no depth test or lighting; this is a second pixel-producing body, not a claim of semantic or visual equivalence with the native renderer.
+- The `axm-render-compare` executable links only to `axm_render_contracts` and compares two receipt-v1 records without requiring either renderer body.
+- For frozen request v1, `axm-render-compare` treats receipts as comparable declared frame intent only when scene contract, render-request contract, exact scene-source digest, dimensions, and output format match. It reports pixel/output digest equality separately and does not require equality for comparability.
 - `AXM_SCENE 1` is an explicit, minimal, versioned on-disk scene-state subset for ordered triangles with finite positions and RGB-byte albedo.
 - The scene loader rejects unsupported versions, unknown directives, invalid/non-finite triangle data, out-of-range RGB values, and trailing tokens instead of silently guessing.
 - `AXM_RENDER_REQUEST 1` is an explicit, minimal, versioned request subset carrying scene path, backend identifier, width, height, `ppm-rgb8`, and output path.
@@ -48,8 +52,7 @@
 - A complete canonical visual/scene format beyond the frozen minimal `AXM_SCENE 1` triangle subset.
 - A complete renderer-neutral render contract beyond frozen `AXM_RENDER_REQUEST 1`; feature negotiation, fallback policy, and richer settings/formats are not defined yet.
 - Receipt timing, allocator/process memory, GPU VRAM, energy, or performance evidence.
-- Pixel equivalence between the AXM native renderer and any external renderer/backend.
-- A second renderer body that writes pixels through the shared contracts.
+- Pixel equivalence, visual equivalence, or feature equivalence between the AXM native renderer and the flat contract renderer or any external renderer/backend.
 - GPU rendering.
 - WebGPU/browser rendering.
 - PBR materials, textures, shadows, reflections, path tracing, denoising, or global illumination.
@@ -67,9 +70,13 @@ The first state-native benchmark is deliberately synthetic. Its byte counts are 
 
 The native reusable-library boundary proves source-level reuse of the existing AXM reference renderer in the tested build. The separate contract-library boundary proves that renderer-neutral scene/request/receipt implementations can be consumed without linking the native renderer body. Neither boundary by itself proves binary compatibility or renderer interchangeability.
 
-The `contract_adapter_probe` is deliberately not called a renderer. It proves that a second executable can select its own backend identity, consume the shared scene/request contracts, use the shared continuity-digest helper, and reject an unsupported backend without depending on `axm_render_native`. It does not write pixels or a render receipt, so it does not yet prove end-to-end external rendering interoperability.
+The `contract_adapter_probe` is deliberately not called a renderer. It proves that an executable can select its own backend identity, consume the shared scene/request contracts, use the shared continuity-digest helper, and reject an unsupported backend without depending on `axm_render_native`. It deliberately does not write pixels or a receipt.
 
-The `AXM_SCENE 1` boundary proves a small on-disk scene-state interoperability foothold. The `AXM_RENDER_REQUEST 1` boundary adds a small on-disk request foothold that names a backend instead of assuming one. `AXM_RENDER_RECEIPT 1` adds a small evidence foothold that can be shared by future renderer bodies, but it does not prove separate backends produce equivalent pixels.
+The `contract_flat_renderer` crosses the next bounded gate: it writes pixels and a shared receipt through the renderer-neutral contracts without linking the native renderer. Its intentionally different rasterization semantics mean that successful contract consumption is evidence of interoperability, not evidence of matching pixels or matching rendering behavior.
+
+The `axm-render-compare` gate compares only what receipt v1 can honestly establish about shared declared frame intent. Under request v1, backend and output path are renderer-specific; same scene-source bytes, contract versions, dimensions, and output format are the comparable body-independent fields preserved in the receipt. The tool reports frame/output digest relation but does not promote a digest mismatch or match into a visual-quality claim.
+
+The `AXM_SCENE 1` boundary proves a small on-disk scene-state interoperability foothold. The `AXM_RENDER_REQUEST 1` boundary adds a small on-disk request foothold that names a backend instead of assuming one. `AXM_RENDER_RECEIPT 1` adds a small evidence foothold shared by both current pixel-producing bodies, but it does not prove those bodies produce equivalent pixels.
 
 Receipt v1 source digests cover exact bytes, not semantic normalization. Comments, whitespace, or line-ending changes alter source digests even when parsed meaning may remain equivalent. The receipt's 64-bit continuity digests are intentionally non-cryptographic and must not be treated as security primitives.
 
