@@ -17,16 +17,33 @@ Registered CTest coverage adds:
 
 The adapter also rejects collisions among request source, scene source, render output, receipt, and capability-manifest paths before launching the render phase.
 
-## Evidence required before merge
+## Verified PR-head evidence
 
-The branch is mergeable only if GitHub Actions verifies:
+GitHub Actions run `34858289131` exercised PR #15 head `ef234991f8674b0b65da03d95b7f21fc02918a2d` on Ubuntu 24.04.5 with GCC 13.3.0 and completed successfully.
 
-- CMake configure succeeds;
-- all targets compile with the repository warning policy;
-- the complete CTest suite passes, including both new external-process cases;
-- all previously established native/flat receipt, capability, comparison, and replay-verification checks remain green.
+Observed results:
 
-No PASS result is asserted in this file merely because the code or tests exist. The CI result for the final PR head is the executable evidence gate.
+- CMake configure: PASS;
+- build: PASS, including `axm-render-external`;
+- CTest: **30/30 PASS**;
+- `external-process-flat-dispatch`: PASS;
+- `external-process-rejects-backend-mismatch`: PASS under `WILL_FAIL`, so the incompatible native-backend request was rejected as required;
+- existing capability publication/negotiation: PASS;
+- existing native and flat render/receipt evidence: PASS;
+- existing cross-backend receipt comparison: PASS;
+- existing capability-bound receipt replay: PASS.
+
+Continuity values observed in that run remained:
+
+- native 320x180 frame pixel digest: `0x456f404dd94c91da`;
+- native output-file continuity digest: `0x7e33cf9168a97ab0`;
+- native PPM SHA-256: `c81172b1e42106b4a1032e4c6873974202e8a57efb76d7c7cb881ea568aa6beb`;
+- flat 64x36 frame pixel digest: `0x5c48decbca7cb29f`;
+- flat 320x180 same-intent frame pixel digest: `0x5338e2b2729f1381`.
+
+The same-intent native/flat receipt comparison remained `comparable_v1=YES` while their pixel and output digests remained different. That is interoperability evidence for shared declared intent, not visual or pixel equivalence.
+
+This evidence section records the passing code-bearing PR head. The final evidence-only commit that adds this record must also pass CI before merge; a green earlier head is not treated as evidence for an unverified later head.
 
 ## Truth boundary
 
