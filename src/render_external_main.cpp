@@ -4,6 +4,7 @@
 #include "axm/render/render_verification.hpp"
 #include "axm/render/scene_contract.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <filesystem>
@@ -28,6 +29,7 @@ struct Args {
     std::string request_path;
     std::string receipt_path;
     std::string capabilities_path;
+    std::string expected_capabilities_path;
 };
 
 Args parse_args(int argc, char** argv) {
@@ -42,16 +44,21 @@ Args parse_args(int argc, char** argv) {
             args.receipt_path = argv[++i];
         } else if (arg == "--capabilities" && i + 1 < argc) {
             args.capabilities_path = argv[++i];
+        } else if (arg == "--expect-capabilities" && i + 1 < argc) {
+            args.expected_capabilities_path = argv[++i];
         } else if (arg == "--help") {
             std::cout
                 << "AXM external renderer process adapter harness\n"
-                << "  --renderer PATH       external renderer/adapter executable\n"
-                << "  --request PATH        AXM_RENDER_REQUEST v1 input\n"
-                << "  --receipt PATH        AXM_RENDER_RECEIPT v1 output path\n"
-                << "  --capabilities PATH   generated AXM_RENDER_CAPABILITIES v1 evidence path\n\n"
+                << "  --renderer PATH             external renderer/adapter executable\n"
+                << "  --request PATH              AXM_RENDER_REQUEST v1 input\n"
+                << "  --receipt PATH              AXM_RENDER_RECEIPT v1 output path\n"
+                << "  --capabilities PATH         generated AXM_RENDER_CAPABILITIES v1 evidence path\n"
+                << "  --expect-capabilities PATH  optional previously inspected capability manifest\n\n"
                 << "Current experimental process convention:\n"
                 << "  RENDERER --capabilities CAPS\n"
                 << "  RENDERER REQUEST RECEIPT\n\n"
+                << "When --expect-capabilities is provided, the freshly discovered manifest\n"
+                << "must semantically match that caller-selected v1 manifest before rendering.\n"
                 << "Declared output/receipt/capability paths are cleared before their phase,\n"
                 << "then must be recreated as regular files by that child invocation.\n";
             std::exit(0);
@@ -201,6 +208,48 @@ void require_digest_unchanged(
     }
 }
 
+std::string capability_manifest_mismatch(
+    const axm::render::RenderCapabilities& expected,
+    const axm::render::RenderCapabilities& observed) {
+    if (expected.renderer != observed.renderer) {
+        return "renderer mismatch: expected=" + expected.renderer +
+            " observed=" + observed.renderer;
+    }
+    if (expected.renderer_version != observed.renderer_version) {
+        return "renderer_version mismatch: expected=" + expected.renderer_version +
+            " observed=" + observed.renderer_version;
+    }
+    if (expected.backend != observed.backend) {
+        return "backend mismatch: expected=" + expected.backend +
+            " observed=" + observed.backend;
+    }
+    if (expected.scene_contract != observed.scene_contract) {
+        return "scene_contract mismatch: expected=" +
+            std::to_string(expected.scene_contract) + " observed=" +
+            std::to_string(observed.scene_contract);
+    }
+    if (expected.render_request_contract != observed.render_request_contract) {
+        return "render_request_contract mismatch: expected=" +
+            std::to_string(expected.render_request_contract) + " observed=" +
+            std::to_string(observed.render_request_contract);
+    }
+    if (expected.max_width != observed.max_width || expected.max_height != observed.max_height) {
+        return "max dimensions mismatch: expected=" +
+            std::to_string(expected.max_width) + "x" + std::to_string(expected.max_height) +
+            " observed=" + std::to_string(observed.max_width) + "x" +
+            std::to_string(observed.max_height);
+    }
+
+    auto expected_formats = expected.output_formats;
+    auto observed_formats = observed.output_formats;
+    std::sort(expected_formats.begin(), expected_formats.end());
+    std::sort(observed_formats.begin(), observed_formats.end());
+    if (expected_formats != observed_formats) {
+        return "output format set mismatch";
+    }
+    return {};
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -223,6 +272,10 @@ int main(int argc, char** argv) {
         const auto output_path = normalized_absolute(request.output_path);
         const auto receipt_path = normalized_absolute(args.receipt_path);
         const auto capabilities_path = normalized_absolute(args.capabilities_path);
+        const bool has_expected_capabilities = !args.expected_capabilities_path.empty();
+        const auto expected_capabilities_path = has_expected_capabilities
+            ? normalized_absolute(args.expected_capabilities_path)
+            : std::filesystem::path{};
 
         reject_path_collision(output_path, "render output", request_path, "request source");
         reject_path_collision(output_path, "render output", scene_path, "scene source");
@@ -234,6 +287,37 @@ int main(int argc, char** argv) {
         reject_path_collision(capabilities_path, "capabilities", output_path, "render output");
         reject_path_collision(capabilities_path, "capabilities", receipt_path, "receipt");
 
+        std::uint64_t expected_capabilities_digest = 0;
+        axm::render::RenderCapabilities expected_capabilities;
+        if (has_expected_capabilities) {
+            reject_path_collision(
+                expected_capabilities_path, "expected capabilities", request_path, "request source");
+            reject_path_collision(
+                expected_capabilities_path, "expected capabilities", scene_path, "scene source");
+            reject_path_collision(
+                expected_capabilities_path, "expected capabilities", output_path, "render output");
+            reject_path_collision(
+                expected_capabilities_path, "expected capabilities", receipt_path, "receipt");
+            reject_path_collision(
+                expected_capabilities_path, "expected capabilities", capabilities_path, "capabilities");
+
+            expected_capabilities_digest = axm::render::continuity_digest64_file(
+                args.expected_capabilities_path);
+            expected_capabilities = axm::render::load_render_capabilities_file(
+                args.expected_capabilities_path);
+            require_digest_unchanged(
+                args.expected_capabilities_path,
+                expected_capabilities_digest,
+                "expected capability manifest");
+
+            const std::string expected_incompatibility =
+                axm::render::render_request_incompatibility(request, expected_capabilities);
+            if (!expected_incompatibility.empty()) {
+                throw std::runtime_error(
+                    "expected capability manifest rejects request: " + expected_incompatibility);
+            }
+        }
+
         clear_declared_artifact_path(capabilities_path, "capability manifest");
         run_required(
             args.renderer_executable,
@@ -243,6 +327,12 @@ int main(int argc, char** argv) {
 
         require_digest_unchanged(args.request_path, request_digest, "render request source");
         require_digest_unchanged(request.scene_path, scene_digest, "scene source");
+        if (has_expected_capabilities) {
+            require_digest_unchanged(
+                args.expected_capabilities_path,
+                expected_capabilities_digest,
+                "expected capability manifest");
+        }
 
         const std::uint64_t capabilities_digest =
             axm::render::continuity_digest64_file(args.capabilities_path);
@@ -256,6 +346,15 @@ int main(int argc, char** argv) {
         if (!incompatibility.empty()) {
             throw std::runtime_error(
                 "external renderer capabilities reject request: " + incompatibility);
+        }
+
+        if (has_expected_capabilities) {
+            const std::string mismatch =
+                capability_manifest_mismatch(expected_capabilities, capabilities);
+            if (!mismatch.empty()) {
+                throw std::runtime_error(
+                    "fresh capability manifest does not match expected manifest: " + mismatch);
+            }
         }
 
         clear_declared_artifact_path(output_path, "render output");
@@ -272,6 +371,12 @@ int main(int argc, char** argv) {
         require_fresh_regular_artifact(capabilities_path, "capability manifest");
         require_digest_unchanged(
             args.capabilities_path, capabilities_digest, "capability manifest");
+        if (has_expected_capabilities) {
+            require_digest_unchanged(
+                args.expected_capabilities_path,
+                expected_capabilities_digest,
+                "expected capability manifest");
+        }
 
         const axm::render::RenderReceiptVerification verification =
             axm::render::verify_render_receipt_files_with_capabilities(
@@ -285,6 +390,11 @@ int main(int argc, char** argv) {
         std::cout << "renderer=" << receipt.renderer << "\n";
         std::cout << "renderer_version=" << receipt.renderer_version << "\n";
         std::cout << "backend=" << receipt.backend << "\n";
+        if (has_expected_capabilities) {
+            std::cout << "expected_capabilities_digest64="
+                      << axm::render::digest64_hex(expected_capabilities_digest) << "\n";
+            std::cout << "expected_capabilities_match=PASS\n";
+        }
         std::cout << "capabilities_digest64="
                   << axm::render::digest64_hex(capabilities_digest) << "\n";
         std::cout << "scene_source_digest64="
