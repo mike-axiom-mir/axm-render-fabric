@@ -78,11 +78,23 @@ The native executable can emit a receipt only from an explicit request:
 
 When receipt emission is requested, the native CLI digests the request and scene sources around loading and checks them again before receipt emission. If their byte digests change during that interval, receipt emission fails rather than silently binding evidence to a visibly different source. This is a practical change-detection check, not an atomic filesystem snapshot and not protection against a change-and-revert race.
 
+## Independent replay verification
+
+`axm-render-verify-receipt` is renderer-neutral and links only to `axm_render_contracts`. Given a request and receipt, it independently re-opens the request, referenced scene, and declared output and checks that the current files still match the receipt's frozen v1 claims:
+
+```bash
+./build/axm-render-verify-receipt build/reference.axmrender build/frame.axmreceipt
+```
+
+For `ppm-rgb8`, the verifier checks the request/scene byte digests, contract versions, backend, dimensions, format, complete output-file digest, and RGB pixel digest. It also parses the request and scene through the frozen v1 loaders and checks the source/output digests again after verification to catch ordinary concurrent changes.
+
+This is deliberately a replay check against files available **now**. It does not establish who produced them, when they were produced, or that they were unchanged before or after the verification interval. The continuity digests remain non-cryptographic. The current pixel replay path is limited to the only v1 output format, `ppm-rgb8`; a future output format needs its own explicit pixel-decoding semantics before the verifier can claim to re-check `frame_pixels_digest64` for it.
+
 ## Truth boundary
 
-A valid v1 receipt proves only that a renderer emitted a syntactically valid evidence record with the declared metadata and digests. For the current native path, repository tests additionally exercise round-trip parsing/writing and known reference-frame continuity.
+A syntactically valid v1 receipt by itself proves only that a renderer emitted a parseable evidence record with declared metadata and digests. The independent replay verifier raises the evidence level when the referenced request, scene, and output are present by checking those declarations against the current bytes and decoded RGB pixels. For the current native and independent flat paths, repository tests exercise both positive verification and rejection of a mismatched request.
 
-A v1 receipt does **not** prove:
+A v1 receipt, even after replay verification, does **not** prove:
 
 - cryptographic integrity, authenticity, or provenance;
 - exact source commit or clean working-tree identity of the renderer;
@@ -90,7 +102,8 @@ A v1 receipt does **not** prove:
 - visual quality;
 - semantic equivalence between two differently formatted scene/request files;
 - pixel equivalence between different renderer bodies;
-- that an external renderer currently implements AXM contracts;
+- that a real third-party renderer currently implements AXM contracts;
+- atomic filesystem snapshotting or protection against change-and-revert races;
 - timing, process RSS, allocator usage, GPU VRAM, energy use, or production performance.
 
 Those remain separate evidence gates.
