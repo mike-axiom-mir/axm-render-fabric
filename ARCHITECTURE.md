@@ -39,6 +39,8 @@ The repository now owns `AXM_RENDER_RECEIPT 1`, a deliberately small renderer-ne
 
 Receipt v1 intentionally does not claim cryptographic integrity, exact source-commit attestation, timing, memory metrics, cross-machine determinism, or visual quality. Those require separate evidence.
 
+The `axm-render-compare` executable consumes two receipt-v1 records and checks whether they describe comparable v1 declared frame intent. Under frozen request v1, backend and output path are renderer-specific; the body-independent fields available in the receipt are scene/request contract versions, exact scene-source digest, dimensions, and output format. Pixel and output-file digest equality are reported separately and are not required for comparability.
+
 ### 6. Observer loop
 A visual observer may inspect actual rendered output and propose state revisions. The observer is downstream of evidence; it must not claim to have seen a frame that was never rendered and inspected.
 
@@ -62,6 +64,11 @@ AXM_SCENE v1 file --------+--> axm_render_contracts
             pixels / PPM      no pixel output       pixels / PPM
                  |                                    |
                  +--> AXM_RENDER_RECEIPT v1 <---------+
+                                  |
+                                  v
+                         axm-render-compare
+                    comparable intent evidence
+                    pixel relation reported only
 ```
 
 `include/axm/render/scene_contract.hpp` owns the renderer-neutral v1 primitive scene types and loader. `include/axm/render/render_contract.hpp` owns the v1 render-request envelope and backend identifier convention. `include/axm/render/render_receipt.hpp` owns the v1 evidence record, continuity file-digest helper, strict parser, and writer. Those implementations build as `axm_render_contracts` / `axm::render_contracts`.
@@ -72,9 +79,11 @@ The `contract_adapter_probe` executable links only to `axm_render_contracts`. It
 
 The `contract_flat_renderer` executable also links only to `axm_render_contracts`, but crosses the next interoperability gate: it consumes the same request and scene contracts, rasterizes ordered triangles with an independent XY flat-fill path, writes `ppm-rgb8`, and emits an `AXM_RENDER_RECEIPT 1`. Its backend is `axm.contract.cpu.flat`; it rejects requests for the native backend rather than silently substituting itself. It deliberately has no depth test, lighting, textures, or native-renderer dependency, and its receipt names its distinct renderer/backend identity.
 
+The `axm-render-compare` executable links only to `axm_render_contracts`. It does not render and does not depend on either renderer body. It consumes two strict receipt-v1 files, rejects them as incomparable if the declared body-independent v1 frame fields differ, and otherwise reports whether their frame/output continuity digests match. A pixel digest match is only an observed digest relation; a mismatch is allowed for comparable requests and neither outcome is a visual-quality or semantic-equivalence claim.
+
 The native CLI accepts either direct flags or `--request PATH`; request-selected backend identifiers other than `axm.native.cpu.reference` fail explicitly. `--receipt PATH` is deliberately narrower: it currently requires a request-backed render so the receipt can bind explicit scene/request source files rather than inventing missing provenance.
 
-This proves the AXM-owned renderer can be embedded, renderer-neutral scene/request/receipt code can be consumed without linking the native renderer body, and a second small pixel-producing body can emit the shared receipt contract. It does **not** prove a stable C++ ABI/API, a real third-party renderer adapter, cross-backend pixel equivalence, cryptographic provenance, or a complete canonical scene/render model.
+This proves the AXM-owned renderer can be embedded, renderer-neutral scene/request/receipt code can be consumed without linking the native renderer body, a second small pixel-producing body can emit the shared receipt contract, and shared receipt evidence can compare declared v1 frame intent across the two bodies without pretending their pixels must match. It does **not** prove a stable C++ ABI/API, a real third-party renderer adapter, cross-backend pixel equivalence, cryptographic provenance, or a complete canonical scene/render model.
 
 The repository also contains a first synthetic state-residency benchmark:
 
@@ -109,8 +118,8 @@ See `research/state-native-rendering/README.md`.
 
 ## Next likely gates
 
-1. Compare declared scene reconstruction across the native body and `axm.contract.cpu.flat` without assuming pixel equivalence is required or already achieved; make differing capabilities explicit rather than treating mismatch as silent failure.
-2. Add the first real external-renderer adapter behind the same scene/request/receipt boundary, with explicit capability rejection where the v1 subset cannot be represented honestly.
+1. Add the first real external-renderer adapter behind the same scene/request/receipt boundary, with explicit capability rejection where the v1 subset cannot be represented honestly.
+2. Introduce explicit renderer capability discovery/negotiation before richer scene/request features make backend differences ambiguous; do not silently infer unsupported features.
 3. Add a first GPU backend while retaining the CPU reference path.
 4. Add browser/WebGPU only after the shared contract is strong enough to avoid unrelated renderer islands.
 5. Extend evidence with explicitly named timing and real allocator/process measurements; add GPU-VRAM evidence only when a GPU backend exists.
