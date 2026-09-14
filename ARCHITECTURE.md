@@ -10,7 +10,14 @@ The repository owns one deliberately tiny frozen interchange subset, `AXM_SCENE 
 ### 2. Render contract
 Defines the minimum translation boundary between state and a renderer. The repository owns a deliberately tiny frozen `AXM_RENDER_REQUEST 1` envelope for scene path, backend identifier, output dimensions, `ppm-rgb8`, and output path. Unsupported request versions/directives are rejected, and renderer bodies must reject backend identifiers they do not implement rather than silently falling back.
 
-This is still narrower than the future render contract: feature negotiation, fallback policy, and richer settings/formats remain separate gates.
+This is still narrower than the future render contract: richer settings/formats, explicit feature requests, and fallback policy remain separate gates.
+
+### 2.5 Renderer capability discovery
+A renderer body should be able to declare what frozen contract subset it accepts before a dispatcher asks it to render.
+
+The repository owns `AXM_RENDER_CAPABILITIES 1`, a small renderer-neutral declaration containing renderer/version identity, backend identifier, supported scene/request contract versions, maximum request dimensions, and supported output formats. The current native and flat bodies can each publish this manifest themselves.
+
+`axm-render-negotiate` checks one `AXM_RENDER_REQUEST 1` plus its referenced `AXM_SCENE 1` source against one capability manifest. Unsupported backend, dimensions, format, or contract versions are explicit incompatibilities. Capability v1 deliberately does not invent feature-level claims for depth, lighting, materials, textures, animation, or other semantics not represented in request v1.
 
 ### 3. Renderer bodies
 Multiple bodies may coexist:
@@ -46,16 +53,18 @@ A visual observer may inspect actual rendered output and propose state revisions
 
 ## Current implementation boundaries
 
-Renderer-neutral scene/request/receipt implementations are separated from the AXM-owned renderer body:
+Renderer-neutral scene/request/receipt/capability implementations are separated from the AXM-owned renderer body:
 
 ```text
 AXM_RENDER_REQUEST v1 ----+
                           |
 AXM_SCENE v1 file --------+--> axm_render_contracts
-                                   |
-                 +-----------------+------------------+
-                 |                 |                  |
-                 v                 v                  v
+                          |        |
+AXM_RENDER_CAPABILITIES v1+--------+-----------------------------+
+                                   |                             |
+                 +-----------------+------------------+          v
+                 |                 |                  |   axm-render-negotiate
+                 v                 v                  v   explicit compatibility
         axm_render_native  contract_adapter_probe  contract_flat_renderer
                  |                 |                  |
         triangle rasterizer  contract validation   independent XY flat fill
@@ -71,7 +80,7 @@ AXM_SCENE v1 file --------+--> axm_render_contracts
                     pixel relation reported only
 ```
 
-`include/axm/render/scene_contract.hpp` owns the renderer-neutral v1 primitive scene types and loader. `include/axm/render/render_contract.hpp` owns the v1 render-request envelope and backend identifier convention. `include/axm/render/render_receipt.hpp` owns the v1 evidence record, continuity file-digest helper, strict parser, and writer. Those implementations build as `axm_render_contracts` / `axm::render_contracts`.
+`include/axm/render/scene_contract.hpp` owns the renderer-neutral v1 primitive scene types and loader. `include/axm/render/render_contract.hpp` owns the v1 render-request envelope and backend identifier convention. `include/axm/render/render_receipt.hpp` owns the v1 evidence record, continuity file-digest helper, strict parser, and writer. `include/axm/render/render_capabilities.hpp` owns the v1 capability declaration plus request-compatibility check. Those implementations build as `axm_render_contracts` / `axm::render_contracts`.
 
 `include/axm/render/reference_renderer.hpp` exposes the AXM-owned native image buffer, renderer, renderer version, and existing frame hash. `axm_render_native` contains the renderer body and depends on `axm_render_contracts` instead of owning renderer-neutral parsing/evidence code itself.
 
@@ -79,11 +88,13 @@ The `contract_adapter_probe` executable links only to `axm_render_contracts`. It
 
 The `contract_flat_renderer` executable also links only to `axm_render_contracts`, but crosses the next interoperability gate: it consumes the same request and scene contracts, rasterizes ordered triangles with an independent XY flat-fill path, writes `ppm-rgb8`, and emits an `AXM_RENDER_RECEIPT 1`. Its backend is `axm.contract.cpu.flat`; it rejects requests for the native backend rather than silently substituting itself. It deliberately has no depth test, lighting, textures, or native-renderer dependency, and its receipt names its distinct renderer/backend identity.
 
+The native `axm-render` executable and `contract_flat_renderer` can each write their own `AXM_RENDER_CAPABILITIES 1` manifest. `axm-render-negotiate` links only to `axm_render_contracts`; it validates the referenced scene with the frozen scene parser and compares the request against the selected manifest. It does not choose another backend, rank renderers, or infer future feature support.
+
 The `axm-render-compare` executable links only to `axm_render_contracts`. It does not render and does not depend on either renderer body. It consumes two strict receipt-v1 files, rejects them as incomparable if the declared body-independent v1 frame fields differ, and otherwise reports whether their frame/output continuity digests match. A pixel digest match is only an observed digest relation; a mismatch is allowed for comparable requests and neither outcome is a visual-quality or semantic-equivalence claim.
 
-The native CLI accepts either direct flags or `--request PATH`; request-selected backend identifiers other than `axm.native.cpu.reference` fail explicitly. `--receipt PATH` is deliberately narrower: it currently requires a request-backed render so the receipt can bind explicit scene/request source files rather than inventing missing provenance.
+The native CLI accepts either direct flags or `--request PATH`; request-selected backend identifiers other than `axm.native.cpu.reference` fail explicitly. `--receipt PATH` is deliberately narrower: it currently requires a request-backed render so the receipt can bind explicit scene/request source files rather than inventing missing provenance. `--capabilities PATH` is a discovery-only operation and cannot be combined with rendering arguments.
 
-This proves the AXM-owned renderer can be embedded, renderer-neutral scene/request/receipt code can be consumed without linking the native renderer body, a second small pixel-producing body can emit the shared receipt contract, and shared receipt evidence can compare declared v1 frame intent across the two bodies without pretending their pixels must match. It does **not** prove a stable C++ ABI/API, a real third-party renderer adapter, cross-backend pixel equivalence, cryptographic provenance, or a complete canonical scene/render model.
+This proves the AXM-owned renderer can be embedded, renderer-neutral scene/request/receipt/capability code can be consumed without linking the native renderer body, a second small pixel-producing body can emit the shared receipt contract, both pixel-producing bodies can publish explicit v1 capability declarations, those declarations can be checked before dispatch, and shared receipt evidence can compare declared v1 frame intent across the two bodies without pretending their pixels must match. It does **not** prove a stable C++ ABI/API, a real third-party renderer adapter, feature-level negotiation beyond request v1, automatic fallback selection, cross-backend pixel equivalence, cryptographic provenance, or a complete canonical scene/render model.
 
 The repository also contains a first synthetic state-residency benchmark:
 
@@ -118,9 +129,9 @@ See `research/state-native-rendering/README.md`.
 
 ## Next likely gates
 
-1. Add the first real external-renderer adapter behind the same scene/request/receipt boundary, with explicit capability rejection where the v1 subset cannot be represented honestly.
-2. Introduce explicit renderer capability discovery/negotiation before richer scene/request features make backend differences ambiguous; do not silently infer unsupported features.
-3. Add a first GPU backend while retaining the CPU reference path.
+1. Add the first real external-renderer adapter behind the same scene/request/receipt/capability boundary, with explicit rejection where the frozen v1 subset cannot be represented honestly.
+2. Add a first GPU backend while retaining the CPU reference path and publishing its own capability manifest.
+3. Extend capability/request contracts only when richer scene features require explicit feature-level negotiation; use a new compatible contract version rather than silently changing v1 meaning.
 4. Add browser/WebGPU only after the shared contract is strong enough to avoid unrelated renderer islands.
 5. Extend evidence with explicitly named timing and real allocator/process measurements; add GPU-VRAM evidence only when a GPU backend exists.
 6. Add a cryptographic digest/provenance layer only with a new compatible receipt version or explicitly additive contract, never by silently changing receipt v1 digest meaning.
