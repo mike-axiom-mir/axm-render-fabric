@@ -6,6 +6,7 @@ add_library(axm_render_contracts STATIC
   src/render_contract.cpp
   src/render_receipt.cpp
   src/render_capabilities.cpp
+  src/render_verification.cpp
 )
 add_library(axm::render_contracts ALIAS axm_render_contracts)
 target_include_directories(axm_render_contracts PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -30,6 +31,10 @@ target_compile_features(axm-render-compare PRIVATE cxx_std_20)
 add_executable(axm-render-negotiate src/render_negotiate_main.cpp)
 target_link_libraries(axm-render-negotiate PRIVATE axm_render_contracts)
 target_compile_features(axm-render-negotiate PRIVATE cxx_std_20)
+
+add_executable(axm-render-verify-receipt src/render_verify_main.cpp)
+target_link_libraries(axm-render-verify-receipt PRIVATE axm_render_contracts)
+target_compile_features(axm-render-verify-receipt PRIVATE cxx_std_20)
 
 add_executable(native_library_smoke tests/native_library_smoke.cpp)
 target_link_libraries(native_library_smoke PRIVATE axm_render_native)
@@ -58,7 +63,7 @@ target_compile_features(contract_flat_renderer PRIVATE cxx_std_20)
 add_executable(state_residency_bench research/state-native-rendering/state_residency.cpp)
 target_compile_features(state_residency_bench PRIVATE cxx_std_20)
 
-foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare axm-render-negotiate native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer state_residency_bench)
+foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare axm-render-negotiate axm-render-verify-receipt native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer state_residency_bench)
   if (MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive-)
   else()
@@ -182,6 +187,32 @@ set_tests_properties(
   interop-compare-rejects-different-dimensions
   PROPERTIES
     FIXTURES_REQUIRED "interop_reference_receipts;contract_flat_small_receipt"
+    WILL_FAIL TRUE
+)
+add_test(
+  NAME receipt-verify-native-reference
+  COMMAND axm-render-verify-receipt
+    ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-native.axmreceipt
+)
+set_tests_properties(receipt-verify-native-reference PROPERTIES FIXTURES_REQUIRED interop_reference_receipts)
+add_test(
+  NAME receipt-verify-flat-reference
+  COMMAND axm-render-verify-receipt
+    ${CMAKE_CURRENT_BINARY_DIR}/contract-flat-reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-flat.axmreceipt
+)
+set_tests_properties(receipt-verify-flat-reference PROPERTIES FIXTURES_REQUIRED interop_reference_receipts)
+add_test(
+  NAME receipt-verify-rejects-mismatched-request
+  COMMAND axm-render-verify-receipt
+    ${CMAKE_CURRENT_BINARY_DIR}/contract-flat-reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-native.axmreceipt
+)
+set_tests_properties(
+  receipt-verify-rejects-mismatched-request
+  PROPERTIES
+    FIXTURES_REQUIRED interop_reference_receipts
     WILL_FAIL TRUE
 )
 
