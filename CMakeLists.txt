@@ -42,10 +42,14 @@ add_executable(contract_adapter_probe tests/contract_adapter_probe.cpp)
 target_link_libraries(contract_adapter_probe PRIVATE axm_render_contracts)
 target_compile_features(contract_adapter_probe PRIVATE cxx_std_20)
 
+add_executable(contract_flat_renderer tests/contract_flat_renderer.cpp)
+target_link_libraries(contract_flat_renderer PRIVATE axm_render_contracts)
+target_compile_features(contract_flat_renderer PRIVATE cxx_std_20)
+
 add_executable(state_residency_bench research/state-native-rendering/state_residency.cpp)
 target_compile_features(state_residency_bench PRIVATE cxx_std_20)
 
-foreach(target axm_render_contracts axm_render_native axm-render native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe state_residency_bench)
+foreach(target axm_render_contracts axm_render_native axm-render native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer state_residency_bench)
   if (MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive-)
   else()
@@ -66,6 +70,11 @@ configure_file(
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/examples/contract-probe.axmrender
   ${CMAKE_CURRENT_BINARY_DIR}/contract-probe.axmrender
+  COPYONLY
+)
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/examples/contract-flat.axmrender
+  ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmrender
   COPYONLY
 )
 
@@ -113,4 +122,17 @@ add_test(
   COMMAND contract_adapter_probe ${CMAKE_CURRENT_SOURCE_DIR}/examples/reference.axmrender
 )
 set_tests_properties(contract-only-adapter-rejects-native-backend PROPERTIES WILL_FAIL TRUE)
+add_test(
+  NAME contract-flat-renderer-writes-pixels-and-receipt
+  COMMAND contract_flat_renderer
+    ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmreceipt
+)
+add_test(
+  NAME contract-flat-renderer-rejects-native-backend
+  COMMAND contract_flat_renderer
+    ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/contract-flat-wrong-backend.axmreceipt
+)
+set_tests_properties(contract-flat-renderer-rejects-native-backend PROPERTIES WILL_FAIL TRUE)
 add_test(NAME state-native-residency-equivalence COMMAND state_residency_bench --self-test)
