@@ -1,5 +1,7 @@
 # Cross-backend receipt comparison verification
 
+> **Correction (2026-09-14):** the historical flat `frame_pixels_digest64=0xf31c764f5e70511f` recorded below was produced by a body-local offset basis inconsistent with frozen `AXM_RENDER_RECEIPT 1` semantics. Fresh verified v1 value for the same 320x180 flat request is `0x5338e2b2729f1381`. See `RECEIPT_FRAME_DIGEST_CONSISTENCY_CORRECTION.md`. The comparator conclusion remains `same_frame_pixels_digest64=NO`; the old flat digest itself must not be treated as valid receipt-v1 evidence.
+
 ## Verified change
 
 The repository now has an executable renderer-neutral comparison gate, `axm-render-compare`, that consumes two strict `AXM_RENDER_RECEIPT 1` files without linking either renderer body.
@@ -98,7 +100,7 @@ render_receipt_compare=PASS
 ## What this establishes
 
 - Two distinct pixel-producing bodies consumed the same exact scene-source bytes under the same scene/request contract versions, dimensions, and output format.
-- Both emitted the shared receipt-v1 evidence shape.
+- Both emitted the shared receipt-v1 evidence shape; the correction notice above supersedes only the old flat frame-digest interpretation.
 - A renderer-neutral executable recognized the receipts as comparable v1 declared frame intent.
 - The executable also surfaced that the produced pixel and output-file digests differ rather than treating interoperability as pixel equivalence.
 
