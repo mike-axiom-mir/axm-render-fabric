@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -37,6 +38,7 @@ struct RendererProcessEvidence {
     std::filesystem::path invocation_path;
     std::filesystem::path canonical_path;
     std::uint64_t digest64 = 0;
+    std::string resolution;
 };
 
 Args parse_args(int argc, char** argv) {
@@ -66,8 +68,9 @@ Args parse_args(int argc, char** argv) {
                 << "  RENDERER REQUEST RECEIPT\n\n"
                 << "When --expect-capabilities is provided, the freshly discovered manifest\n"
                 << "must semantically match that caller-selected v1 manifest before rendering.\n"
-                << "When the supplied renderer argument resolves directly to a regular file,\n"
-                << "its canonical target and byte digest are continuity-checked across both phases.\n"
+                << "Explicit renderer paths and bare renderer names resolved through PATH are\n"
+                << "pinned to one invocation path; its canonical target and byte digest are\n"
+                << "continuity-checked across both child-process phases.\n"
                 << "Declared output/receipt/capability paths are cleared before their phase,\n"
                 << "then must be recreated as regular files by that child invocation.\n";
             std::exit(0);
@@ -99,37 +102,111 @@ void reject_path_collision(
     }
 }
 
+char executable_path_list_separator() {
+#ifdef _WIN32
+    return ';';
+#else
+    return ':';
+#endif
+}
+
+std::vector<std::filesystem::path> executable_name_candidates(
+    const std::filesystem::path& directory,
+    const std::filesystem::path& supplied_name) {
+    std::vector<std::filesystem::path> candidates;
+    candidates.push_back(directory / supplied_name);
+#ifdef _WIN32
+    if (supplied_name.extension().empty()) {
+        const char* raw_pathext = std::getenv("PATHEXT");
+        const std::string pathext = raw_pathext ? raw_pathext : ".COM;.EXE;.BAT;.CMD";
+        std::size_t start = 0;
+        while (start <= pathext.size()) {
+            const std::size_t end = pathext.find(';', start);
+            const std::string extension = pathext.substr(
+                start,
+                end == std::string::npos ? std::string::npos : end - start);
+            if (!extension.empty()) {
+                candidates.push_back(directory / (supplied_name.string() + extension));
+            }
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+    }
+#endif
+    return candidates;
+}
+
+std::optional<std::filesystem::path> resolve_renderer_from_path(
+    const std::string& executable) {
+    const char* raw_path = std::getenv("PATH");
+    if (raw_path == nullptr) return std::nullopt;
+
+    const std::string path_list(raw_path);
+    const char separator = executable_path_list_separator();
+    const std::filesystem::path supplied_name(executable);
+    std::size_t start = 0;
+    while (start <= path_list.size()) {
+        const std::size_t end = path_list.find(separator, start);
+        const std::string entry = path_list.substr(
+            start,
+            end == std::string::npos ? std::string::npos : end - start);
+        const std::filesystem::path directory = entry.empty()
+            ? std::filesystem::current_path()
+            : std::filesystem::path(entry);
+
+        for (const auto& candidate : executable_name_candidates(directory, supplied_name)) {
+            std::error_code ec;
+            const std::filesystem::file_status status = std::filesystem::status(candidate, ec);
+            if (ec || !std::filesystem::is_regular_file(status)) continue;
+#ifndef _WIN32
+            if (::access(candidate.c_str(), X_OK) != 0) continue;
+#endif
+            return std::filesystem::absolute(candidate).lexically_normal();
+        }
+
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    return std::nullopt;
+}
+
 std::optional<RendererProcessEvidence> inspect_renderer_process_evidence(
     const std::string& executable) {
     const std::filesystem::path supplied(executable);
     const bool explicit_path = supplied.is_absolute() || supplied.has_parent_path();
-    const std::filesystem::path invocation_path = normalized_absolute(executable);
+
+    std::filesystem::path invocation_path;
+    std::string resolution;
+    if (explicit_path) {
+        invocation_path = normalized_absolute(executable);
+        resolution = "EXPLICIT";
+    } else {
+        const auto path_match = resolve_renderer_from_path(executable);
+        if (!path_match.has_value()) return std::nullopt;
+        invocation_path = *path_match;
+        resolution = "PATH";
+    }
 
     std::error_code ec;
     const std::filesystem::path canonical_path =
         std::filesystem::canonical(invocation_path, ec);
     if (ec) {
-        if (explicit_path) {
-            throw std::runtime_error(
-                "cannot resolve renderer executable path for continuity evidence: " +
-                ec.message());
-        }
-        return std::nullopt;
+        throw std::runtime_error(
+            "cannot resolve renderer executable path for continuity evidence: " +
+            ec.message());
     }
 
     const std::filesystem::file_status status = std::filesystem::status(canonical_path, ec);
     if (ec || !std::filesystem::is_regular_file(status)) {
-        if (explicit_path) {
-            throw std::runtime_error(
-                "renderer executable path must resolve to a regular file for dispatch");
-        }
-        return std::nullopt;
+        throw std::runtime_error(
+            "renderer executable path must resolve to a regular file for dispatch");
     }
 
     RendererProcessEvidence evidence;
     evidence.invocation_path = invocation_path;
     evidence.canonical_path = canonical_path;
     evidence.digest64 = axm::render::continuity_digest64_file(canonical_path.string());
+    evidence.resolution = resolution;
     return evidence;
 }
 
@@ -349,6 +426,9 @@ int main(int argc, char** argv) {
 
         const auto renderer_process_evidence =
             inspect_renderer_process_evidence(args.renderer_executable);
+        const std::string renderer_launch_executable = renderer_process_evidence.has_value()
+            ? renderer_process_evidence->invocation_path.string()
+            : args.renderer_executable;
         const auto request_path = normalized_absolute(args.request_path);
         const auto scene_path = normalized_absolute(request.scene_path);
         const auto output_path = normalized_absolute(request.output_path);
@@ -418,7 +498,7 @@ int main(int argc, char** argv) {
 
         clear_declared_artifact_path(capabilities_path, "capability manifest");
         run_required(
-            args.renderer_executable,
+            renderer_launch_executable,
             {"--capabilities", args.capabilities_path},
             "capability-discovery");
         require_fresh_regular_artifact(capabilities_path, "capability manifest");
@@ -464,7 +544,7 @@ int main(int argc, char** argv) {
             require_renderer_process_unchanged(*renderer_process_evidence);
         }
         run_required(
-            args.renderer_executable,
+            renderer_launch_executable,
             {args.request_path, args.receipt_path},
             "render");
         require_fresh_regular_artifact(output_path, "render output");
@@ -498,12 +578,17 @@ int main(int argc, char** argv) {
 
         std::cout << "renderer_process=" << args.renderer_executable << "\n";
         if (renderer_process_evidence.has_value()) {
+            std::cout << "renderer_process_resolution="
+                      << renderer_process_evidence->resolution << "\n";
+            std::cout << "renderer_process_invocation_path="
+                      << renderer_process_evidence->invocation_path.string() << "\n";
             std::cout << "renderer_process_canonical_path="
                       << renderer_process_evidence->canonical_path.string() << "\n";
             std::cout << "renderer_process_digest64="
                       << axm::render::digest64_hex(renderer_process_evidence->digest64) << "\n";
             std::cout << "renderer_process_continuity=PASS\n";
         } else {
+            std::cout << "renderer_process_resolution=UNRESOLVED\n";
             std::cout << "renderer_process_continuity=UNAVAILABLE\n";
         }
         std::cout << "renderer=" << receipt.renderer << "\n";
