@@ -1,5 +1,6 @@
 #include "axm/render/render_verification.hpp"
 
+#include "axm/render/render_capabilities.hpp"
 #include "axm/render/render_contract.hpp"
 #include "axm/render/render_receipt.hpp"
 #include "axm/render/scene_contract.hpp"
@@ -149,6 +150,44 @@ RenderReceiptVerification verify_render_receipt_files(
     require_match(continuity_digest64_file(request.output_path) == output_digest, "output file changed during verification");
 
     return {scene_digest, request_digest, pixel_digest, output_digest};
+}
+
+RenderReceiptVerification verify_render_receipt_files_with_capabilities(
+    const std::string& request_path,
+    const std::string& receipt_path,
+    const std::string& capabilities_path) {
+    const RenderReceiptVerification verification =
+        verify_render_receipt_files(request_path, receipt_path);
+
+    const std::uint64_t capabilities_digest = continuity_digest64_file(capabilities_path);
+    const RenderCapabilities capabilities = load_render_capabilities_file(capabilities_path);
+    require_match(
+        continuity_digest64_file(capabilities_path) == capabilities_digest,
+        "capabilities source changed while loading");
+
+    const RenderRequest request = load_render_request_file(request_path);
+    const RenderReceipt receipt = load_render_receipt_file(receipt_path);
+
+    const std::string incompatibility = render_request_incompatibility(request, capabilities);
+    if (!incompatibility.empty()) {
+        verification_error("capabilities are incompatible with request: " + incompatibility);
+    }
+
+    require_match(receipt.renderer == capabilities.renderer, "renderer identity vs capabilities");
+    require_match(
+        receipt.renderer_version == capabilities.renderer_version,
+        "renderer version vs capabilities");
+    require_match(receipt.backend == capabilities.backend, "backend vs capabilities");
+    require_match(receipt.scene_contract == capabilities.scene_contract, "scene contract vs capabilities");
+    require_match(
+        receipt.render_request_contract == capabilities.render_request_contract,
+        "render request contract vs capabilities");
+
+    require_match(
+        continuity_digest64_file(capabilities_path) == capabilities_digest,
+        "capabilities source changed during verification");
+
+    return verification;
 }
 
 } // namespace axm::render
