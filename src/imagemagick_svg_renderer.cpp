@@ -11,7 +11,6 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -152,7 +151,7 @@ double project_y(float y, int height) {
 
 void write_svg(
     const std::filesystem::path& path,
-    const axm::render::Scene& scene,
+    const axm::render::SceneState& scene,
     int width,
     int height) {
     std::ofstream out(path, std::ios::binary);
