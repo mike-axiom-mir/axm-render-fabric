@@ -85,11 +85,22 @@ int main(int argc, char** argv) {
             unsupported_version_rejected = true;
         }
 
+        bool comment_marker_token_rejected = false;
+        try {
+            auto invalid = expected;
+            invalid.renderer = "invalid#renderer";
+            axm::render::write_render_receipt_file(receipt_path + ".invalid-token", invalid);
+        } catch (const std::exception&) {
+            comment_marker_token_rejected = true;
+        }
+
         std::cout << "render_receipt_contract_version="
                   << axm::render::render_receipt_contract_version << "\n";
         std::cout << "receipt_round_trip=" << (round_trip_ok ? "PASS" : "FAIL") << "\n";
         std::cout << "receipt_unsupported_version_rejected="
                   << (unsupported_version_rejected ? "PASS" : "FAIL") << "\n";
+        std::cout << "receipt_comment_marker_token_rejected="
+                  << (comment_marker_token_rejected ? "PASS" : "FAIL") << "\n";
         std::cout << "receipt_scene_source_digest64="
                   << axm::render::digest64_hex(expected.scene_source_digest64) << "\n";
         std::cout << "receipt_request_source_digest64="
@@ -104,7 +115,8 @@ int main(int argc, char** argv) {
                   << (output_continuity_ok ? "PASS" : "FAIL") << "\n";
 
         return round_trip_ok && unsupported_version_rejected &&
-            frame_continuity_ok && output_continuity_ok ? 0 : 2;
+            comment_marker_token_rejected && frame_continuity_ok &&
+            output_continuity_ok ? 0 : 2;
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << "\n";
         return 1;
