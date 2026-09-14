@@ -1,0 +1,8 @@
+# AXM Render Fabric minimal render-request interchange example.
+AXM_RENDER_REQUEST 1
+scene reference.axmscene
+backend axm.native.cpu.reference
+width 320
+height 180
+format ppm-rgb8
+output request-frame.ppm

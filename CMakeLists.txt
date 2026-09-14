@@ -4,6 +4,7 @@ project(axm_render_fabric VERSION 0.1.0 LANGUAGES CXX)
 add_library(axm_render_native STATIC
   src/reference_renderer.cpp
   src/scene_contract.cpp
+  src/render_contract.cpp
 )
 add_library(axm::render_native ALIAS axm_render_native)
 target_include_directories(axm_render_native PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -21,10 +22,14 @@ add_executable(scene_file_smoke tests/scene_file_smoke.cpp)
 target_link_libraries(scene_file_smoke PRIVATE axm_render_native)
 target_compile_features(scene_file_smoke PRIVATE cxx_std_20)
 
+add_executable(render_request_smoke tests/render_request_smoke.cpp)
+target_link_libraries(render_request_smoke PRIVATE axm_render_native)
+target_compile_features(render_request_smoke PRIVATE cxx_std_20)
+
 add_executable(state_residency_bench research/state-native-rendering/state_residency.cpp)
 target_compile_features(state_residency_bench PRIVATE cxx_std_20)
 
-foreach(target axm_render_native axm-render native_library_smoke scene_file_smoke state_residency_bench)
+foreach(target axm_render_native axm-render native_library_smoke scene_file_smoke render_request_smoke state_residency_bench)
   if (MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive-)
   else()
@@ -44,4 +49,13 @@ add_test(
   COMMAND axm-render --scene ${CMAKE_CURRENT_SOURCE_DIR}/examples/unsupported-v2.axmscene --self-test
 )
 set_tests_properties(scene-file-rejects-unsupported-version PROPERTIES WILL_FAIL TRUE)
+add_test(
+  NAME render-request-reference-render
+  COMMAND render_request_smoke ${CMAKE_CURRENT_SOURCE_DIR}/examples/reference.axmrender
+)
+add_test(
+  NAME render-request-rejects-unsupported-backend
+  COMMAND axm-render --request ${CMAKE_CURRENT_SOURCE_DIR}/examples/unsupported-backend.axmrender --self-test
+)
+set_tests_properties(render-request-rejects-unsupported-backend PROPERTIES WILL_FAIL TRUE)
 add_test(NAME state-native-residency-equivalence COMMAND state_residency_bench --self-test)
