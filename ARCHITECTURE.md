@@ -3,10 +3,12 @@
 ## Layers
 
 ### 1. Canonical visual / scene state
-Describes what should exist: geometry, transforms, materials, lights, cameras, environment, animation state, and provenance. This contract is intentionally not frozen in the current implementation.
+Describes what should exist: geometry, transforms, materials, lights, cameras, environment, animation state, and provenance. The full future contract is intentionally not frozen in the current implementation.
+
+The repository now owns one deliberately tiny frozen interchange subset, `AXM_SCENE 1`, containing only ordered triangles with positions and flat RGB-byte albedo. That subset is useful as an executable interoperability foothold without pretending it is the whole canonical model. Incompatible changes to the v1 on-disk meaning require a new version.
 
 ### 2. Render contract
-Defines the minimum translation boundary between state and a renderer. Future versions should make inputs, outputs, feature support, fallbacks, and receipts explicit.
+Defines the minimum translation boundary between state and a renderer. Future versions should make inputs, outputs, feature support, fallbacks, and receipts explicit. Resolution remains a render-request concern rather than being encoded into `AXM_SCENE 1`.
 
 ### 3. Renderer bodies
 Multiple bodies may coexist:
@@ -36,20 +38,23 @@ A visual observer may inspect actual rendered output and propose state revisions
 
 ## Current native implementation
 
-The native reference path is now separated into a reusable C++ library plus thin clients:
+The native reference path is separated into a reusable C++ library plus thin clients:
 
 ```text
-C++ caller / test / CLI
-          |
-          v
-  axm_render_native
-          |
+AXM_SCENE v1 file / C++ caller
+             |
+             v
+      SceneState primitives
+             |
+             v
+     axm_render_native
+             |
  triangle rasterizer -> depth test -> lighting -> pixels -> frame hash / PPM
 ```
 
-`include/axm/render/reference_renderer.hpp` exposes the current reference primitives, image buffer, renderer, and frame hash. `src/reference_renderer.cpp` owns the implementation. `src/main.cpp` contains only the demo scene and CLI behavior. `tests/native_library_smoke.cpp` links against the library as an independent client.
+`include/axm/render/scene_contract.hpp` owns the renderer-neutral v1 primitive scene types and loader. `include/axm/render/reference_renderer.hpp` exposes the native image buffer, renderer, and frame hash. `src/scene_contract.cpp` strictly parses the v1 file subset. `src/reference_renderer.cpp` owns the native implementation. `src/main.cpp` can use either its built-in continuity fixture or `--scene PATH`. `tests/native_library_smoke.cpp` and `tests/scene_file_smoke.cpp` are independent clients of the library.
 
-This boundary is intentionally narrower than a canonical scene/render contract. It proves the owned native renderer can be embedded without requiring the CLI, but it is **not** yet a stable ABI/API promise and does not define how an external renderer should represent the same scene.
+This is intentionally narrower than a complete canonical scene/render contract. It proves the owned native renderer can be embedded and can consume one versioned declared scene-state subset from disk. It is **not** yet a stable C++ ABI/API promise and does not yet define the full render request or prove an external renderer can reproduce the same pixels.
 
 The repository also contains a first synthetic state-residency benchmark:
 
@@ -82,10 +87,9 @@ See `research/state-native-rendering/README.md`.
 
 ## Next likely gates
 
-1. Define a small versioned scene-state/render-request contract without pretending the full future scene model is known.
-2. Load declared scene state from disk instead of only constructing the demo scene in code.
-3. Add frame receipts: state hash + renderer build/version + settings + output hash.
-4. Prove the shared contract through a minimal external/mock backend adapter that reports unsupported features explicitly.
-5. Add a first GPU backend while retaining the CPU reference path.
-6. Add browser/WebGPU only after the shared contract is strong enough to avoid two unrelated renderers.
-7. Replace synthetic residency estimates with allocator/process measurements, then GPU-VRAM evidence when a GPU backend exists.
+1. Define a small versioned renderer-neutral render-request contract around declared scene state, output dimensions/settings, backend selection, and explicit unsupported features.
+2. Add frame receipts: scene-state digest + renderer build/version + backend/settings + output hash.
+3. Prove `AXM_SCENE 1` through a minimal external/mock backend adapter that reports unsupported features explicitly instead of silently degrading.
+4. Add a first GPU backend while retaining the CPU reference path.
+5. Add browser/WebGPU only after the shared contract is strong enough to avoid two unrelated renderers.
+6. Replace synthetic residency estimates with allocator/process measurements, then GPU-VRAM evidence when a GPU backend exists.
