@@ -8,11 +8,13 @@ The architectural direction is deliberately broader than "a renderer inside a ga
 
 The repository contains a tiny dependency-free C++ reference renderer. It is intentionally small and honest: it rasterizes triangles with a depth buffer and simple directional Lambert lighting, writes a PPM frame, and exposes same-run frame hashing.
 
-The renderer is separated from the CLI as the `axm_render_native` static library. Scene primitives now live in the renderer-neutral `include/axm/render/scene_contract.hpp`, while `include/axm/render/reference_renderer.hpp` exposes the native image/renderer surface. The `axm-render` command is a thin client of that library, and independent CTest clients exercise both direct-library rendering and file-loaded scene state.
+The renderer is separated from the CLI as the `axm_render_native` static library. Scene primitives now live in the renderer-neutral `include/axm/render/scene_contract.hpp`, while `include/axm/render/reference_renderer.hpp` exposes the native image/renderer surface. The `axm-render` command is a thin client of that library, and independent CTest clients exercise direct-library rendering, file-loaded scene state, and file-loaded render requests.
 
-The first on-disk interoperability boundary is also executable: `AXM_SCENE 1` is a deliberately tiny, versioned triangle-only scene-state format. Incompatible changes require a new version, and unsupported versions/directives are rejected instead of being guessed. It is a stable minimal subset, not a claim that the full future canonical scene model is already known.
+The first on-disk interoperability boundaries are executable: `AXM_SCENE 1` is a deliberately tiny, versioned triangle-only scene-state format, and `AXM_RENDER_REQUEST 1` is a deliberately tiny request envelope for scene path, backend identifier, dimensions, output format, and output path. Incompatible changes require new versions, and unsupported versions/directives are rejected instead of being guessed.
 
-It is **not** yet a stable C++ ABI/API promise, installed package, GPU renderer, PBR renderer, complete canonical scene format, renderer-neutral render-request contract, game engine, V-Ray replacement, browser renderer, or external-renderer adapter.
+The native executable currently implements backend identifier `axm.native.cpu.reference` and rejects other requested backends rather than silently substituting itself. That creates a stable place for future adapters without claiming those adapters exist yet.
+
+It is **not** yet a stable C++ ABI/API promise, installed package, GPU renderer, PBR renderer, complete canonical scene format, external-renderer adapter, game engine, V-Ray replacement, browser renderer, or proof of cross-backend pixel equivalence.
 
 ### Build
 
@@ -22,11 +24,12 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ./build/axm-render --out frame.ppm
 ./build/axm-render --scene examples/reference.axmscene --out scene-frame.ppm
+./build/axm-render --request examples/reference.axmrender
 ```
 
 A parent CMake build that includes this repository with `add_subdirectory(...)` can link native C++ code against the in-tree alias target `axm::render_native`. Packaging/install/export rules are not claimed yet.
 
-See `docs/SCENE_CONTRACT_V1.md` for the exact v1 exchange syntax and truth boundary.
+See `docs/SCENE_CONTRACT_V1.md` and `docs/RENDER_REQUEST_V1.md` for the exact frozen minimal interchange subsets and truth boundaries.
 
 ## Direction
 

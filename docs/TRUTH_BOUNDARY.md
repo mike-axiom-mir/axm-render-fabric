@@ -5,12 +5,16 @@
 - The repository contains a native C++ reference renderer.
 - The native renderer is built as the `axm_render_native` static library with public C++ headers.
 - Renderer-neutral scene primitives live in `include/axm/render/scene_contract.hpp`; the native renderer consumes those primitives rather than defining duplicate scene types.
+- A renderer-neutral minimal request envelope lives in `include/axm/render/render_contract.hpp` and the frozen `AXM_RENDER_REQUEST 1` on-disk subset.
 - The `axm-render` CLI links to that library rather than owning a duplicate renderer implementation.
 - A separate `native_library_smoke` test client links directly to the library, renders pixels, validates the image dimensions/buffer size, and compares two same-run frame hashes.
 - `AXM_SCENE 1` is an explicit, minimal, versioned on-disk scene-state subset for ordered triangles with finite positions and RGB-byte albedo.
 - The scene loader rejects unsupported versions, unknown directives, invalid/non-finite triangle data, out-of-range RGB values, and trailing tokens instead of silently guessing.
-- `axm-render --scene PATH` can load declared v1 scene state from disk and render it through the AXM-owned native substrate.
-- The reference `AXM_SCENE 1` fixture renders to the same known native reference-frame FNV hash as the prior built-in demo scene in the tested build.
+- `AXM_RENDER_REQUEST 1` is an explicit, minimal, versioned request subset carrying scene path, backend identifier, width, height, `ppm-rgb8`, and output path.
+- The request loader rejects unsupported versions, unknown/duplicate directives, invalid dimensions, unsupported v1 output formats, and trailing tokens.
+- Relative scene/output paths in a request are resolved against the request file's directory.
+- `axm-render --request PATH` executes requests selecting `axm.native.cpu.reference`; a different backend identifier is rejected explicitly rather than silently falling back.
+- The reference request renders to the same known native FNV frame hash as the existing reference scene in the tested build.
 - The renderer can rasterize triangles into an RGB image buffer.
 - It performs a depth test.
 - It applies simple directional Lambert-style lighting.
@@ -27,7 +31,7 @@
 - A stable public ABI or long-term C++ API compatibility guarantee for `axm_render_native`.
 - Install/export/package support for consuming the library outside a source/CMake integration.
 - A complete canonical visual/scene format beyond the frozen minimal `AXM_SCENE 1` triangle subset.
-- A renderer-neutral render-request contract covering backend selection, dimensions/settings, outputs, feature support, or fallbacks.
+- A complete renderer-neutral render contract beyond frozen `AXM_RENDER_REQUEST 1`; feature negotiation, fallback policy, richer settings/formats, and receipts are not defined yet.
 - Pixel equivalence between the AXM native renderer and any external renderer/backend.
 - GPU rendering.
 - WebGPU/browser rendering.
@@ -46,6 +50,6 @@ The first state-native benchmark is deliberately synthetic. Its byte counts are 
 
 The reusable library boundary proves source-level reuse of the existing native reference implementation in the tested build. It does not by itself prove binary compatibility or renderer interchangeability.
 
-The `AXM_SCENE 1` boundary now proves a small on-disk interoperability foothold: the syntax and semantics in `docs/SCENE_CONTRACT_V1.md` are versioned and incompatible changes require a new version. This does not elevate that tiny subset into the full future canonical scene model, nor does it prove a second renderer implements it yet.
+The `AXM_SCENE 1` boundary proves a small on-disk scene-state interoperability foothold. The `AXM_RENDER_REQUEST 1` boundary adds a small on-disk request foothold that names a backend instead of assuming one. Neither proves a second renderer implements the contracts or that separate backends produce equivalent pixels.
 
 A future implementation must move items across this boundary only with reproducible evidence and must name the exact memory/output metric being compared.
