@@ -70,3 +70,11 @@ jobs:
           sha256sum build/imagemagick-reference.ppm
           ./build/axm-render-compare build/frame.axmreceipt build/imagemagick-evidence.axmreceipt | tee build/imagemagick-compare.txt
           grep -q '^comparable_v1=YES$' build/imagemagick-compare.txt
+
+          ./build/imagemagick_svg_renderer --capabilities build/imagemagick-identity-check.axmcaps \
+            | tee build/imagemagick-identity.txt
+          delegated_digest="$(sed -n 's/^delegated_executable_digest64=0x//p' build/imagemagick-identity.txt)"
+          test "${#delegated_digest}" -eq 16
+          grep -q "^renderer_version 0.2.0+delegated-fnv64-${delegated_digest}$" build/imagemagick-identity-check.axmcaps
+          grep -q "^renderer_version 0.2.0+delegated-fnv64-${delegated_digest}$" build/imagemagick-evidence.axmcaps
+          grep -q "^renderer_version 0.2.0+delegated-fnv64-${delegated_digest}$" build/imagemagick-evidence.axmreceipt
