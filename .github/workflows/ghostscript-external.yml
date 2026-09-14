@@ -1,0 +1,57 @@
+name: ghostscript-external
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test-render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure external renderers are available
+        run: |
+          missing=0
+          command -v convert >/dev/null 2>&1 || missing=1
+          command -v gs >/dev/null 2>&1 || missing=1
+          if [ "$missing" -ne 0 ]; then
+            sudo apt-get update
+            sudo apt-get install -y imagemagick ghostscript
+          fi
+          convert -version
+          gs --version
+      - name: Configure
+        run: cmake -S . -B build
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Test complete suite with Ghostscript present
+        run: ctest --test-dir build --output-on-failure
+      - name: Render native comparison evidence
+        run: ./build/axm-render --request build/reference.axmrender --receipt build/native-ghostscript-compare.axmreceipt
+      - name: Render through real external Ghostscript adapter
+        run: |
+          export AXM_GHOSTSCRIPT="$(command -v gs)"
+          gs --version
+          ./build/axm-render-external \
+            --renderer ./build/ghostscript_ps_renderer \
+            --request build/ghostscript-reference.axmrender \
+            --receipt build/ghostscript-evidence.axmreceipt \
+            --capabilities build/ghostscript-evidence.axmcaps
+          cat build/ghostscript-evidence.axmcaps
+          cat build/ghostscript-evidence.axmreceipt
+          sha256sum build/ghostscript-reference.ppm
+          ./build/axm-render-compare \
+            build/native-ghostscript-compare.axmreceipt \
+            build/ghostscript-evidence.axmreceipt \
+            | tee build/ghostscript-compare.txt
+          grep -q '^comparable_v1=YES$' build/ghostscript-compare.txt
+      - name: Verify delegated Ghostscript executable identity binding
+        run: |
+          export AXM_GHOSTSCRIPT="$(command -v gs)"
+          ./build/ghostscript_ps_renderer --capabilities build/ghostscript-identity-check.axmcaps \
+            | tee build/ghostscript-identity.txt
+          delegated_digest="$(sed -n 's/^delegated_executable_digest64=0x//p' build/ghostscript-identity.txt)"
+          test "${#delegated_digest}" -eq 16
+          grep -q "^renderer_version 0.1.0+delegated-fnv64-${delegated_digest}$" build/ghostscript-identity-check.axmcaps
+          grep -q "^renderer_version 0.1.0+delegated-fnv64-${delegated_digest}$" build/ghostscript-evidence.axmcaps
+          grep -q "^renderer_version 0.1.0+delegated-fnv64-${delegated_digest}$" build/ghostscript-evidence.axmreceipt
