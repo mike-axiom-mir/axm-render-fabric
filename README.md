@@ -4,11 +4,13 @@ AXM Render Fabric is an open rendering capability layer: one AXM-owned renderer 
 
 The architectural direction is deliberately broader than "a renderer inside a game". Games, browser tools, editors, product visualizers, simulations, animation systems, and visual-observer loops should be able to share rendering infrastructure without being trapped inside one product body.
 
-## Current state — v0.1 foundation
+## Current state — native reference substrate
 
-The repository now contains a tiny dependency-free C++ reference renderer. It is intentionally small and honest: it rasterizes a demo scene of triangles with a depth buffer and simple directional Lambert lighting, writes a PPM frame, and exposes a same-run determinism self-test.
+The repository contains a tiny dependency-free C++ reference renderer. It is intentionally small and honest: it rasterizes triangles with a depth buffer and simple directional Lambert lighting, writes a PPM frame, and exposes same-run frame hashing.
 
-It is **not** yet a GPU renderer, PBR renderer, scene-file loader, game engine, V-Ray replacement, or browser renderer.
+The renderer is now separated from the CLI as the `axm_render_native` static library with the public header `include/axm/render/reference_renderer.hpp`. The `axm-render` command is a thin client of that library, and `native_library_smoke` is a second independent client used by CTest. This makes the AXM-owned native substrate embeddable in other C++ software without requiring callers to invoke the CLI.
+
+It is **not** yet a stable ABI/API promise, installed package, GPU renderer, PBR renderer, canonical scene-file loader, game engine, V-Ray replacement, browser renderer, or external-renderer adapter.
 
 ### Build
 
@@ -18,6 +20,8 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ./build/axm-render --out frame.ppm
 ```
+
+A parent CMake build that includes this repository with `add_subdirectory(...)` can link native C++ code against the in-tree alias target `axm::render_native`. Packaging/install/export rules are not claimed yet.
 
 ## Direction
 

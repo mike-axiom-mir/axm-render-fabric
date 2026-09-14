@@ -3,7 +3,7 @@
 ## Layers
 
 ### 1. Canonical visual / scene state
-Describes what should exist: geometry, transforms, materials, lights, cameras, environment, animation state, and provenance. This contract is intentionally not frozen in v0.1.
+Describes what should exist: geometry, transforms, materials, lights, cameras, environment, animation state, and provenance. This contract is intentionally not frozen in the current implementation.
 
 ### 2. Render contract
 Defines the minimum translation boundary between state and a renderer. Future versions should make inputs, outputs, feature support, fallbacks, and receipts explicit.
@@ -34,15 +34,22 @@ A render result should be accompanied by enough metadata to say which state, ren
 ### 6. Observer loop
 A visual observer may inspect actual rendered output and propose state revisions. The observer is downstream of evidence; it must not claim to have seen a frame that was never rendered and inspected.
 
-## v0.1 implementation
+## Current native implementation
 
-The first implementation is a dependency-free CPU reference rasterizer. Its purpose is not visual sophistication. Its purpose is to establish a real executable path:
+The native reference path is now separated into a reusable C++ library plus thin clients:
 
 ```text
-in-memory scene -> rasterizer -> depth test -> lighting -> pixels -> frame hash / PPM
+C++ caller / test / CLI
+          |
+          v
+  axm_render_native
+          |
+ triangle rasterizer -> depth test -> lighting -> pixels -> frame hash / PPM
 ```
 
-This gives the repository a working substrate that can be replaced, compared, and expanded without pretending the future architecture already exists.
+`include/axm/render/reference_renderer.hpp` exposes the current reference primitives, image buffer, renderer, and frame hash. `src/reference_renderer.cpp` owns the implementation. `src/main.cpp` contains only the demo scene and CLI behavior. `tests/native_library_smoke.cpp` links against the library as an independent client.
+
+This boundary is intentionally narrower than a canonical scene/render contract. It proves the owned native renderer can be embedded without requiring the CLI, but it is **not** yet a stable ABI/API promise and does not define how an external renderer should represent the same scene.
 
 The repository also contains a first synthetic state-residency benchmark:
 
@@ -75,10 +82,10 @@ See `research/state-native-rendering/README.md`.
 
 ## Next likely gates
 
-1. Separate renderer library from CLI.
-2. Define a small versioned scene-state contract.
-3. Load a scene from disk instead of only the demo scene.
-4. Add frame receipts: state hash + renderer build/version + settings + output hash.
+1. Define a small versioned scene-state/render-request contract without pretending the full future scene model is known.
+2. Load declared scene state from disk instead of only constructing the demo scene in code.
+3. Add frame receipts: state hash + renderer build/version + settings + output hash.
+4. Prove the shared contract through a minimal external/mock backend adapter that reports unsupported features explicitly.
 5. Add a first GPU backend while retaining the CPU reference path.
 6. Add browser/WebGPU only after the shared contract is strong enough to avoid two unrelated renderers.
 7. Replace synthetic residency estimates with allocator/process measurements, then GPU-VRAM evidence when a GPU backend exists.
