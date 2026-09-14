@@ -40,6 +40,35 @@ jobs:
           grep -q '^compatible_count=1$' build/multi-capability-negotiation.txt
           test "$(grep -c '^compatible=YES$' build/multi-capability-negotiation.txt)" -eq 1
           test "$(grep -c '^compatible=NO$' build/multi-capability-negotiation.txt)" -eq 1
+      - name: Bind chosen capability manifest to actual dispatch
+        run: |
+          ./build/axm-render-external \
+            --renderer ./build/contract_flat_renderer \
+            --request build/contract-flat-reference.axmrender \
+            --receipt build/bound-flat.axmreceipt \
+            --capabilities build/bound-flat-fresh.axmcaps \
+            --expect-capabilities build/flat-evidence.axmcaps \
+            | tee build/bound-flat-dispatch.txt
+          grep -q '^expected_capabilities_match=PASS$' build/bound-flat-dispatch.txt
+          grep -q '^external_process_dispatch=PASS$' build/bound-flat-dispatch.txt
+
+          cp build/flat-evidence.axmcaps build/flat-mismatched-identity.axmcaps
+          sed -i 's/^renderer axm.contract.flat-demo$/renderer axm.contract.flat-demo-mismatch/' \
+            build/flat-mismatched-identity.axmcaps
+          set +e
+          ./build/axm-render-external \
+            --renderer ./build/contract_flat_renderer \
+            --request build/contract-flat-reference.axmrender \
+            --receipt build/mismatched-flat.axmreceipt \
+            --capabilities build/mismatched-flat-fresh.axmcaps \
+            --expect-capabilities build/flat-mismatched-identity.axmcaps \
+            > build/mismatched-flat-dispatch.txt 2>&1
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -q 'fresh capability manifest does not match expected manifest: renderer mismatch' \
+            build/mismatched-flat-dispatch.txt
+          test ! -e build/mismatched-flat.axmreceipt
       - name: Render native evidence frame and receipt
         run: ./build/axm-render --request build/reference.axmrender --receipt build/frame.axmreceipt
       - name: Record native output and receipt evidence
