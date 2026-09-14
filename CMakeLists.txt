@@ -5,6 +5,7 @@ add_library(axm_render_contracts STATIC
   src/scene_contract.cpp
   src/render_contract.cpp
   src/render_receipt.cpp
+  src/render_capabilities.cpp
 )
 add_library(axm::render_contracts ALIAS axm_render_contracts)
 target_include_directories(axm_render_contracts PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -25,6 +26,10 @@ target_compile_features(axm-render PRIVATE cxx_std_20)
 add_executable(axm-render-compare src/render_compare_main.cpp)
 target_link_libraries(axm-render-compare PRIVATE axm_render_contracts)
 target_compile_features(axm-render-compare PRIVATE cxx_std_20)
+
+add_executable(axm-render-negotiate src/render_negotiate_main.cpp)
+target_link_libraries(axm-render-negotiate PRIVATE axm_render_contracts)
+target_compile_features(axm-render-negotiate PRIVATE cxx_std_20)
 
 add_executable(native_library_smoke tests/native_library_smoke.cpp)
 target_link_libraries(native_library_smoke PRIVATE axm_render_native)
@@ -53,7 +58,7 @@ target_compile_features(contract_flat_renderer PRIVATE cxx_std_20)
 add_executable(state_residency_bench research/state-native-rendering/state_residency.cpp)
 target_compile_features(state_residency_bench PRIVATE cxx_std_20)
 
-foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer state_residency_bench)
+foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare axm-render-negotiate native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer state_residency_bench)
   if (MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive-)
   else()
@@ -177,6 +182,43 @@ set_tests_properties(
   interop-compare-rejects-different-dimensions
   PROPERTIES
     FIXTURES_REQUIRED "interop_reference_receipts;contract_flat_small_receipt"
+    WILL_FAIL TRUE
+)
+
+add_test(
+  NAME capabilities-native-manifest
+  COMMAND axm-render --capabilities ${CMAKE_CURRENT_BINARY_DIR}/native.axmcaps
+)
+set_tests_properties(capabilities-native-manifest PROPERTIES FIXTURES_SETUP native_capabilities_manifest)
+add_test(
+  NAME capabilities-flat-manifest
+  COMMAND contract_flat_renderer --capabilities ${CMAKE_CURRENT_BINARY_DIR}/flat.axmcaps
+)
+set_tests_properties(capabilities-flat-manifest PROPERTIES FIXTURES_SETUP flat_capabilities_manifest)
+add_test(
+  NAME capabilities-negotiate-native-request
+  COMMAND axm-render-negotiate
+    ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/native.axmcaps
+)
+set_tests_properties(capabilities-negotiate-native-request PROPERTIES FIXTURES_REQUIRED native_capabilities_manifest)
+add_test(
+  NAME capabilities-negotiate-flat-request
+  COMMAND axm-render-negotiate
+    ${CMAKE_CURRENT_BINARY_DIR}/contract-flat-reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/flat.axmcaps
+)
+set_tests_properties(capabilities-negotiate-flat-request PROPERTIES FIXTURES_REQUIRED flat_capabilities_manifest)
+add_test(
+  NAME capabilities-reject-backend-mismatch
+  COMMAND axm-render-negotiate
+    ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/flat.axmcaps
+)
+set_tests_properties(
+  capabilities-reject-backend-mismatch
+  PROPERTIES
+    FIXTURES_REQUIRED flat_capabilities_manifest
     WILL_FAIL TRUE
 )
 
