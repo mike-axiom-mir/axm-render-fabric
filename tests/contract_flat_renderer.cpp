@@ -1,3 +1,4 @@
+#include "axm/render/render_capabilities.hpp"
 #include "axm/render/render_contract.hpp"
 #include "axm/render/render_receipt.hpp"
 #include "axm/render/scene_contract.hpp"
@@ -16,6 +17,19 @@ namespace {
 constexpr const char* flat_backend = "axm.contract.cpu.flat";
 constexpr const char* flat_renderer = "axm.contract.flat-demo";
 constexpr const char* flat_renderer_version = "0.1.0";
+
+axm::render::RenderCapabilities flat_capabilities() {
+    return {
+        flat_renderer,
+        flat_renderer_version,
+        flat_backend,
+        axm::render::scene_contract_version,
+        axm::render::render_request_contract_version,
+        8192,
+        8192,
+        {"ppm-rgb8"}
+    };
+}
 
 struct Point2 {
     double x{};
@@ -127,9 +141,22 @@ bool same_receipt(const axm::render::RenderReceipt& a, const axm::render::Render
 
 int main(int argc, char** argv) {
     try {
+        if (argc == 3 && std::string(argv[1]) == "--capabilities") {
+            const auto capabilities = flat_capabilities();
+            axm::render::write_render_capabilities_file(argv[2], capabilities);
+            std::cout << "capabilities=" << argv[2] << "\n";
+            std::cout << "backend=" << capabilities.backend << "\n";
+            std::cout << "scene_contract=" << capabilities.scene_contract << "\n";
+            std::cout << "render_request_contract=" << capabilities.render_request_contract << "\n";
+            std::cout << "max_dimensions=" << capabilities.max_width << "x" << capabilities.max_height << "\n";
+            std::cout << "format=ppm-rgb8\n";
+            return 0;
+        }
+
         if (argc != 3) {
             throw std::invalid_argument(
-                "usage: contract_flat_renderer REQUEST.axmrender RECEIPT.axmreceipt");
+                "usage: contract_flat_renderer REQUEST.axmrender RECEIPT.axmreceipt\n"
+                "   or: contract_flat_renderer --capabilities OUTPUT.axmcaps");
         }
 
         const std::string request_path = argv[1];
