@@ -32,12 +32,25 @@ RENDERER --capabilities CAPS.axmcaps
 RENDERER REQUEST.axmrender RECEIPT.axmreceipt
 ```
 
-This invocation convention is deliberately **not frozen as an AXM contract version yet**. It is executable research for the process boundary. A future third-party adapter may justify a versioned launcher protocol once the required fields and failure semantics are supported by real integrations rather than guessed in advance.
+This invocation convention is deliberately **not frozen as an AXM contract version yet**. It remains executable research for the process boundary. The first real external-rasterizer exercise now exists, but one working integration is still too little evidence to freeze a launcher protocol for future renderers with different invocation and lifecycle needs.
+
+## Current exercises
+
+Two materially different paths now exercise the harness:
+
+1. `contract_flat_renderer` is a repository-owned independent renderer body. It proves that another body can publish capabilities, write pixels/receipts, and be verified through a separate process without linking the AXM native renderer.
+2. `imagemagick_svg_renderer` is an AXM adapter that delegates actual rasterization to the external ImageMagick `convert` executable. The adapter translates the frozen `AXM_SCENE 1` triangle/albedo subset to SVG, asks ImageMagick for raw RGB8 pixels, wraps those pixels in the requested PPM envelope, and writes the shared receipt. Its backend identity is `external.imagemagick.svg-raster` and mismatched backend requests are rejected rather than silently redirected.
+
+The ImageMagick path is CI-exercised through `axm-render-external`, not invoked as a bypass around the harness. CI records the actual ImageMagick version used for the observed run and compares the resulting receipt with the native receipt only at the existing body-independent `comparable_v1` intent boundary.
 
 ## Truth boundary
 
-This harness demonstrates process isolation plus contract/evidence checking when exercised successfully. Requiring newly created artifact files strengthens the statement that the accepted files came from the current dispatch attempt rather than being silently reused from an earlier run. It still does not prove that the child executable is trustworthy, sandboxed, third-party, or cryptographically authenticated. An explicitly selected child process has the same operating-system permissions as the invoking user unless the surrounding runtime constrains it.
+This harness demonstrates process separation plus contract/evidence checking when exercised successfully. Requiring newly created artifact files strengthens the statement that the accepted files came from the current dispatch attempt rather than being silently reused from an earlier run. It still does not prove that the child executable is trustworthy, sandboxed, or cryptographically authenticated. An explicitly selected child process has the same operating-system permissions as the invoking user unless the surrounding runtime constrains it.
 
-`AXM_RENDER_RECEIPT 1` and the current continuity digests remain non-cryptographic evidence. Fresh-path enforcement is not process attestation: a child may still invoke other programs, race with another process that has the same filesystem permissions, or deliberately write misleading bytes that only later contract verification can reject. Successful replay does not establish visual quality, semantic equivalence between renderer bodies, cross-machine determinism, GPU behavior, production performance, or provenance of the executable itself.
+The ImageMagick exercise establishes that a real external renderer process can sit behind the current AXM contract boundary for the frozen triangle/albedo subset in the tested environment. It does **not** establish a production-grade third-party renderer integration or broad scene-feature portability. The adapter uses an XY SVG translation with flat albedo; it does not preserve the native renderer's depth or lighting behavior and makes no claim of equivalent pixels or equivalent visual semantics.
 
-The first repository exercise uses the independent `contract_flat_renderer` body because it already publishes capabilities and emits receipts without linking the native renderer. That is a process-boundary interoperability test, not a claim that a real external vendor renderer has been integrated.
+`AXM_RENDER_RECEIPT 1` and the current continuity digests remain non-cryptographic evidence. Fresh-path enforcement is not process attestation: a child may still invoke other programs, race with another process that has the same filesystem permissions, or deliberately write misleading bytes that only later contract verification can reject. The receipt identifies the AXM adapter version, but it does not currently bind the delegated ImageMagick executable version or executable digest. CI log evidence for an ImageMagick version is therefore not cryptographic or receipt-bound provenance.
+
+Successful replay does not establish visual quality, semantic equivalence between renderer bodies, cross-machine or cross-version determinism, GPU behavior, production performance, sandboxing, or provenance of the executable itself. Exact ImageMagick pixels may vary with platform, build, delegates, SVG rasterization, antialiasing, and colorspace behavior.
+
+See `evidence/IMAGEMAGICK_EXTERNAL_RENDERER_VERIFICATION.md` for the observed CI environment, receipt/output digests, native comparison result, first failed compile run, repaired passing run, and explicit four-root gate.
