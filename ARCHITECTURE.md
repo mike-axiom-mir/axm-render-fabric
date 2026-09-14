@@ -35,37 +35,44 @@ The goal is not to assume that state-native rendering is superior. It is to meas
 ### 5. Pixel / frame evidence
 A render result should be accompanied by enough metadata to say which state, renderer version, backend, settings, and output digest produced it.
 
-The repository now owns `AXM_RENDER_RECEIPT 1`, a deliberately small renderer-neutral evidence envelope. It records renderer/backend identity, scene/request contract versions, exact source-byte continuity digests, dimensions/format, a pixel-buffer digest, and an output-file digest. The format has strict read/write support in the shared library so future adapters can emit and consume the same evidence shape.
+The repository now owns `AXM_RENDER_RECEIPT 1`, a deliberately small renderer-neutral evidence envelope. It records renderer/backend identity, scene/request contract versions, exact source-byte continuity digests, dimensions/format, a pixel-buffer digest, and an output-file digest. The format has strict read/write support in the renderer-neutral contract library so future adapters can emit and consume the same evidence shape.
 
 Receipt v1 intentionally does not claim cryptographic integrity, exact source-commit attestation, timing, memory metrics, cross-machine determinism, or visual quality. Those require separate evidence.
 
 ### 6. Observer loop
 A visual observer may inspect actual rendered output and propose state revisions. The observer is downstream of evidence; it must not claim to have seen a frame that was never rendered and inspected.
 
-## Current native implementation
+## Current implementation boundaries
 
-The native reference path is separated into a reusable C++ library plus thin clients:
+Renderer-neutral scene/request/receipt implementations are separated from the AXM-owned renderer body:
 
 ```text
 AXM_RENDER_REQUEST v1 ----+
                           |
-AXM_SCENE v1 file --------+--> SceneState + request settings
+AXM_SCENE v1 file --------+--> axm_render_contracts
                                    |
-                                   v
-                          axm_render_native
-                                   |
-                triangle rasterizer -> depth test -> lighting
-                                   |
-                              pixels / PPM
-                                   |
-                                   +--> AXM_RENDER_RECEIPT v1
+                 +-----------------+------------------+
+                 |                                    |
+                 v                                    v
+        axm_render_native                    contract_adapter_probe
+                 |                                    |
+        triangle rasterizer                    contract validation
+        depth test + lighting                  source digests
+                 |                                    |
+            pixels / PPM                       no pixel output
+                 |
+                 +--> AXM_RENDER_RECEIPT v1
 ```
 
-`include/axm/render/scene_contract.hpp` owns the renderer-neutral v1 primitive scene types and loader. `include/axm/render/render_contract.hpp` owns the v1 render-request envelope and backend identifier convention. `include/axm/render/render_receipt.hpp` owns the v1 evidence record, continuity file-digest helper, strict parser, and writer. `include/axm/render/reference_renderer.hpp` exposes the native image buffer, renderer, renderer version, and existing frame hash.
+`include/axm/render/scene_contract.hpp` owns the renderer-neutral v1 primitive scene types and loader. `include/axm/render/render_contract.hpp` owns the v1 render-request envelope and backend identifier convention. `include/axm/render/render_receipt.hpp` owns the v1 evidence record, continuity file-digest helper, strict parser, and writer. Those implementations build as `axm_render_contracts` / `axm::render_contracts`.
 
-The CLI accepts either direct flags or `--request PATH`; request-selected backend identifiers other than `axm.native.cpu.reference` fail explicitly. `--receipt PATH` is deliberately narrower: it currently requires a request-backed render so the receipt can bind explicit scene/request source files rather than inventing missing provenance.
+`include/axm/render/reference_renderer.hpp` exposes the AXM-owned native image buffer, renderer, renderer version, and existing frame hash. `axm_render_native` now contains the renderer body and depends on `axm_render_contracts` instead of owning renderer-neutral parsing/evidence code itself.
 
-This proves the owned native renderer can be embedded, can consume versioned declared scene/request subsets from disk, and can emit a versioned renderer-neutral evidence record. It does **not** yet prove a stable C++ ABI/API, an external renderer implementation, cross-backend pixel equivalence, cryptographic provenance, or a complete canonical scene/render model.
+The `contract_adapter_probe` executable links only to `axm_render_contracts`. It accepts backend identifier `axm.mock.contract-probe`, loads a render request and scene, computes the same source-byte continuity digests exposed by the receipt contract, and reports the contract versions it consumed. It rejects a request selecting the native backend instead of silently substituting itself. It deliberately writes no pixels and no receipt.
+
+The native CLI accepts either direct flags or `--request PATH`; request-selected backend identifiers other than `axm.native.cpu.reference` fail explicitly. `--receipt PATH` is deliberately narrower: it currently requires a request-backed render so the receipt can bind explicit scene/request source files rather than inventing missing provenance.
+
+This proves the AXM-owned renderer can be embedded and that renderer-neutral scene/request/receipt code can be consumed by a second executable without linking the native renderer body. It does **not** yet prove a stable C++ ABI/API, an actual external renderer that writes pixels, cross-backend pixel equivalence, cryptographic provenance, or a complete canonical scene/render model.
 
 The repository also contains a first synthetic state-residency benchmark:
 
@@ -100,8 +107,9 @@ See `research/state-native-rendering/README.md`.
 
 ## Next likely gates
 
-1. Prove the shared scene/request/receipt contracts through a minimal external/mock backend adapter that reports unsupported features explicitly instead of silently degrading.
-2. Add a first GPU backend while retaining the CPU reference path.
-3. Add browser/WebGPU only after the shared contract is strong enough to avoid two unrelated renderers.
-4. Extend evidence with explicitly named timing and real allocator/process measurements; add GPU-VRAM evidence only when a GPU backend exists.
-5. Add a cryptographic digest/provenance layer only with a new compatible receipt version or explicitly additive contract, never by silently changing receipt v1 digest meaning.
+1. Turn the contract-only mock adapter probe into a minimal second renderer body that writes pixels and an `AXM_RENDER_RECEIPT 1`, while continuing to reject unsupported capabilities explicitly instead of silently degrading.
+2. Compare declared scene reconstruction across the native body and that second renderer without assuming pixel equivalence is required or already achieved.
+3. Add a first GPU backend while retaining the CPU reference path.
+4. Add browser/WebGPU only after the shared contract is strong enough to avoid two unrelated renderers.
+5. Extend evidence with explicitly named timing and real allocator/process measurements; add GPU-VRAM evidence only when a GPU backend exists.
+6. Add a cryptographic digest/provenance layer only with a new compatible receipt version or explicitly additive contract, never by silently changing receipt v1 digest meaning.
