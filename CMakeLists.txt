@@ -36,6 +36,10 @@ add_executable(axm-render-verify-receipt src/render_verify_main.cpp)
 target_link_libraries(axm-render-verify-receipt PRIVATE axm_render_contracts)
 target_compile_features(axm-render-verify-receipt PRIVATE cxx_std_20)
 
+add_executable(axm-render-external src/render_external_main.cpp)
+target_link_libraries(axm-render-external PRIVATE axm_render_contracts)
+target_compile_features(axm-render-external PRIVATE cxx_std_20)
+
 add_executable(native_library_smoke tests/native_library_smoke.cpp)
 target_link_libraries(native_library_smoke PRIVATE axm_render_native)
 target_compile_features(native_library_smoke PRIVATE cxx_std_20)
@@ -63,7 +67,7 @@ target_compile_features(contract_flat_renderer PRIVATE cxx_std_20)
 add_executable(state_residency_bench research/state-native-rendering/state_residency.cpp)
 target_compile_features(state_residency_bench PRIVATE cxx_std_20)
 
-foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare axm-render-negotiate axm-render-verify-receipt native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer state_residency_bench)
+foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare axm-render-negotiate axm-render-verify-receipt axm-render-external native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer state_residency_bench)
   if (MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive-)
   else()
@@ -287,5 +291,23 @@ set_tests_properties(
     FIXTURES_REQUIRED interop_reference_receipts
     WILL_FAIL TRUE
 )
+
+add_test(
+  NAME external-process-flat-dispatch
+  COMMAND axm-render-external
+    --renderer $<TARGET_FILE:contract_flat_renderer>
+    --request ${CMAKE_CURRENT_BINARY_DIR}/contract-flat-reference.axmrender
+    --receipt ${CMAKE_CURRENT_BINARY_DIR}/external-flat.axmreceipt
+    --capabilities ${CMAKE_CURRENT_BINARY_DIR}/external-flat.axmcaps
+)
+add_test(
+  NAME external-process-rejects-backend-mismatch
+  COMMAND axm-render-external
+    --renderer $<TARGET_FILE:contract_flat_renderer>
+    --request ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+    --receipt ${CMAKE_CURRENT_BINARY_DIR}/external-flat-wrong-backend.axmreceipt
+    --capabilities ${CMAKE_CURRENT_BINARY_DIR}/external-flat-wrong-backend.axmcaps
+)
+set_tests_properties(external-process-rejects-backend-mismatch PROPERTIES WILL_FAIL TRUE)
 
 add_test(NAME state-native-residency-equivalence COMMAND state_residency_bench --self-test)
