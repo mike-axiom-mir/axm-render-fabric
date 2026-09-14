@@ -1,9 +1,11 @@
 #include "axm/render/reference_renderer.hpp"
 #include "axm/render/render_contract.hpp"
+#include "axm/render/render_receipt.hpp"
 #include "axm/render/scene_contract.hpp"
 
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
@@ -24,11 +26,13 @@ struct Args {
     std::string output = "frame.ppm";
     std::string scene_path;
     std::string request_path;
+    std::string receipt_path;
     bool self_test = false;
     bool width_set = false;
     bool height_set = false;
     bool output_set = false;
     bool scene_set = false;
+    bool receipt_set = false;
 };
 
 static Args parse_args(int argc, char** argv) {
@@ -39,6 +43,9 @@ static Args parse_args(int argc, char** argv) {
             args.self_test = true;
         } else if (a == "--request" && i + 1 < argc) {
             args.request_path = argv[++i];
+        } else if (a == "--receipt" && i + 1 < argc) {
+            args.receipt_path = argv[++i];
+            args.receipt_set = true;
         } else if (a == "--scene" && i + 1 < argc) {
             args.scene_path = argv[++i];
             args.scene_set = true;
@@ -54,6 +61,7 @@ static Args parse_args(int argc, char** argv) {
         } else if (a == "--help") {
             std::cout << "AXM Render Fabric reference renderer\n"
                       << "  --request PATH        load AXM_RENDER_REQUEST v1 (scene/backend/dimensions/format/output)\n"
+                      << "  --receipt PATH        write AXM_RENDER_RECEIPT v1 for a request render\n"
                       << "  --scene PATH          load AXM_SCENE v1 state from disk\n"
                       << "  --self-test           render twice and verify identical frame hashes\n"
                       << "  --out PATH            output PPM path (default frame.ppm)\n"
@@ -67,10 +75,20 @@ static Args parse_args(int argc, char** argv) {
     if (!args.request_path.empty() && (args.scene_set || args.output_set || args.width_set || args.height_set)) {
         throw std::invalid_argument("--request cannot be combined with --scene, --out, --width, or --height");
     }
+    if (args.receipt_set && args.request_path.empty()) {
+        throw std::invalid_argument("--receipt currently requires --request so source evidence is explicit");
+    }
+    if (args.receipt_set && args.self_test) {
+        throw std::invalid_argument("--receipt cannot be combined with --self-test because self-test does not write output");
+    }
     if (args.width <= 0 || args.height <= 0 || args.width > 8192 || args.height > 8192) {
         throw std::invalid_argument("width/height must be in the range 1..8192");
     }
     return args;
+}
+
+static std::filesystem::path normalized_absolute(const std::string& path) {
+    return std::filesystem::absolute(std::filesystem::path(path)).lexically_normal();
 }
 
 } // namespace axm
@@ -85,9 +103,18 @@ int main(int argc, char** argv) {
         std::string scene_path = args.scene_path;
         std::string backend = axm::render::native_reference_backend;
         std::string output_format = "ppm-rgb8";
+        std::uint64_t request_source_digest64 = 0;
+        std::uint64_t scene_source_digest64 = 0;
 
         if (!args.request_path.empty()) {
+            if (args.receipt_set) {
+                request_source_digest64 = axm::render::continuity_digest64_file(args.request_path);
+            }
             const auto request = axm::render::load_render_request_file(args.request_path);
+            if (args.receipt_set &&
+                axm::render::continuity_digest64_file(args.request_path) != request_source_digest64) {
+                throw std::runtime_error("render request source changed while it was being loaded");
+            }
             if (request.backend != axm::render::native_reference_backend) {
                 throw std::runtime_error(
                     "unsupported backend for native executable: " + request.backend +
@@ -101,10 +128,21 @@ int main(int argc, char** argv) {
             output_format = request.output_format;
         }
 
+        if (args.receipt_set && axm::normalized_absolute(args.receipt_path) == axm::normalized_absolute(output)) {
+            throw std::invalid_argument("receipt path must differ from rendered output path");
+        }
+
         const axm::render::ReferenceRenderer renderer(width, height);
+        if (args.receipt_set) {
+            scene_source_digest64 = axm::render::continuity_digest64_file(scene_path);
+        }
         const auto scene = scene_path.empty()
             ? axm::demo_scene()
             : axm::render::load_scene_file(scene_path);
+        if (args.receipt_set &&
+            axm::render::continuity_digest64_file(scene_path) != scene_source_digest64) {
+            throw std::runtime_error("scene source changed while it was being loaded");
+        }
 
         if (args.self_test) {
             const auto a = renderer.render(scene.triangles);
@@ -123,14 +161,46 @@ int main(int argc, char** argv) {
         }
 
         const auto image = renderer.render(scene.triangles);
+        const std::uint64_t frame_digest64 = axm::render::fnv1a(image);
         image.write_ppm(output);
+
+        if (args.receipt_set) {
+            if (axm::render::continuity_digest64_file(args.request_path) != request_source_digest64) {
+                throw std::runtime_error("render request source changed before receipt emission");
+            }
+            if (axm::render::continuity_digest64_file(scene_path) != scene_source_digest64) {
+                throw std::runtime_error("scene source changed before receipt emission");
+            }
+
+            const axm::render::RenderReceipt receipt{
+                axm::render::native_reference_backend,
+                axm::render::native_reference_renderer_version,
+                backend,
+                axm::render::scene_contract_version,
+                axm::render::render_request_contract_version,
+                scene_source_digest64,
+                request_source_digest64,
+                width,
+                height,
+                output_format,
+                frame_digest64,
+                axm::render::continuity_digest64_file(output)
+            };
+            axm::render::write_render_receipt_file(args.receipt_path, receipt);
+        }
+
         std::cout << "render_request_source=" << (args.request_path.empty() ? "cli" : args.request_path) << "\n";
         std::cout << "backend=" << backend << "\n";
         std::cout << "output_format=" << output_format << "\n";
         std::cout << "scene_source=" << (scene_path.empty() ? "builtin" : scene_path) << "\n";
         std::cout << "scene_triangles=" << scene.triangles.size() << "\n";
         std::cout << "wrote=" << output << "\n";
-        std::cout << "frame_hash=0x" << std::hex << axm::render::fnv1a(image) << "\n";
+        std::cout << "frame_hash=0x" << std::hex << frame_digest64 << "\n";
+        if (args.receipt_set) {
+            std::cout << "receipt=" << args.receipt_path << "\n";
+            std::cout << "scene_source_digest64=" << axm::render::digest64_hex(scene_source_digest64) << "\n";
+            std::cout << "request_source_digest64=" << axm::render::digest64_hex(request_source_digest64) << "\n";
+        }
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << "\n";
