@@ -30,6 +30,16 @@ jobs:
           cat build/flat-evidence.axmcaps
           ./build/axm-render-negotiate build/reference.axmrender build/native-evidence.axmcaps
           ./build/axm-render-negotiate build/contract-flat-reference.axmrender build/flat-evidence.axmcaps
+
+          ./build/axm-render-negotiate \
+            build/reference.axmrender \
+            build/flat-evidence.axmcaps \
+            build/native-evidence.axmcaps \
+            | tee build/multi-capability-negotiation.txt
+          grep -q '^manifest_count=2$' build/multi-capability-negotiation.txt
+          grep -q '^compatible_count=1$' build/multi-capability-negotiation.txt
+          test "$(grep -c '^compatible=YES$' build/multi-capability-negotiation.txt)" -eq 1
+          test "$(grep -c '^compatible=NO$' build/multi-capability-negotiation.txt)" -eq 1
       - name: Render native evidence frame and receipt
         run: ./build/axm-render --request build/reference.axmrender --receipt build/frame.axmreceipt
       - name: Record native output and receipt evidence
