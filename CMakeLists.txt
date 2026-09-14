@@ -5,6 +5,7 @@ add_library(axm_render_native STATIC
   src/reference_renderer.cpp
   src/scene_contract.cpp
   src/render_contract.cpp
+  src/render_receipt.cpp
 )
 add_library(axm::render_native ALIAS axm_render_native)
 target_include_directories(axm_render_native PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -26,16 +27,31 @@ add_executable(render_request_smoke tests/render_request_smoke.cpp)
 target_link_libraries(render_request_smoke PRIVATE axm_render_native)
 target_compile_features(render_request_smoke PRIVATE cxx_std_20)
 
+add_executable(render_receipt_smoke tests/render_receipt_smoke.cpp)
+target_link_libraries(render_receipt_smoke PRIVATE axm_render_native)
+target_compile_features(render_receipt_smoke PRIVATE cxx_std_20)
+
 add_executable(state_residency_bench research/state-native-rendering/state_residency.cpp)
 target_compile_features(state_residency_bench PRIVATE cxx_std_20)
 
-foreach(target axm_render_native axm-render native_library_smoke scene_file_smoke render_request_smoke state_residency_bench)
+foreach(target axm_render_native axm-render native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke state_residency_bench)
   if (MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive-)
   else()
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
   endif()
 endforeach()
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/examples/reference.axmscene
+  ${CMAKE_CURRENT_BINARY_DIR}/reference.axmscene
+  COPYONLY
+)
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/examples/reference.axmrender
+  ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+  COPYONLY
+)
 
 enable_testing()
 add_test(NAME deterministic-reference-render COMMAND axm-render --self-test)
@@ -58,4 +74,18 @@ add_test(
   COMMAND axm-render --request ${CMAKE_CURRENT_SOURCE_DIR}/examples/unsupported-backend.axmrender --self-test
 )
 set_tests_properties(render-request-rejects-unsupported-backend PROPERTIES WILL_FAIL TRUE)
+add_test(
+  NAME render-receipt-round-trip
+  COMMAND render_receipt_smoke
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/reference.axmrender
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/reference.axmscene
+    ${CMAKE_CURRENT_BINARY_DIR}/receipt-smoke.ppm
+    ${CMAKE_CURRENT_BINARY_DIR}/receipt-smoke.axmreceipt
+)
+add_test(
+  NAME render-request-cli-writes-receipt
+  COMMAND axm-render
+    --request ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+    --receipt ${CMAKE_CURRENT_BINARY_DIR}/cli-reference.axmreceipt
+)
 add_test(NAME state-native-residency-equivalence COMMAND state_residency_bench --self-test)
