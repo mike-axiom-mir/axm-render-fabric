@@ -252,5 +252,40 @@ set_tests_properties(
     FIXTURES_REQUIRED flat_capabilities_manifest
     WILL_FAIL TRUE
 )
+add_test(
+  NAME receipt-verify-native-reference-with-capabilities
+  COMMAND axm-render-verify-receipt
+    ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-native.axmreceipt
+    ${CMAKE_CURRENT_BINARY_DIR}/native.axmcaps
+)
+set_tests_properties(
+  receipt-verify-native-reference-with-capabilities
+  PROPERTIES FIXTURES_REQUIRED "interop_reference_receipts;native_capabilities_manifest"
+)
+add_test(
+  NAME receipt-verify-flat-reference-with-capabilities
+  COMMAND axm-render-verify-receipt
+    ${CMAKE_CURRENT_BINARY_DIR}/contract-flat-reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-flat.axmreceipt
+    ${CMAKE_CURRENT_BINARY_DIR}/flat.axmcaps
+)
+set_tests_properties(
+  receipt-verify-flat-reference-with-capabilities
+  PROPERTIES FIXTURES_REQUIRED "interop_reference_receipts;flat_capabilities_manifest"
+)
+add_test(
+  NAME receipt-verify-rejects-capability-identity-mismatch
+  COMMAND axm-render-verify-receipt
+    ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-native.axmreceipt
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/native-mismatched-identity.axmcaps
+)
+set_tests_properties(
+  receipt-verify-rejects-capability-identity-mismatch
+  PROPERTIES
+    FIXTURES_REQUIRED interop_reference_receipts
+    WILL_FAIL TRUE
+)
 
 add_test(NAME state-native-residency-equivalence COMMAND state_residency_bench --self-test)
