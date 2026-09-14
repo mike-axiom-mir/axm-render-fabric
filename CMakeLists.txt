@@ -40,6 +40,10 @@ add_executable(axm-render-external src/render_external_main.cpp)
 target_link_libraries(axm-render-external PRIVATE axm_render_contracts)
 target_compile_features(axm-render-external PRIVATE cxx_std_20)
 
+add_executable(imagemagick_svg_renderer src/imagemagick_svg_renderer.cpp)
+target_link_libraries(imagemagick_svg_renderer PRIVATE axm_render_contracts)
+target_compile_features(imagemagick_svg_renderer PRIVATE cxx_std_20)
+
 add_executable(native_library_smoke tests/native_library_smoke.cpp)
 target_link_libraries(native_library_smoke PRIVATE axm_render_native)
 target_compile_features(native_library_smoke PRIVATE cxx_std_20)
@@ -74,7 +78,7 @@ target_compile_features(contract_caps_only_renderer PRIVATE cxx_std_20)
 add_executable(state_residency_bench research/state-native-rendering/state_residency.cpp)
 target_compile_features(state_residency_bench PRIVATE cxx_std_20)
 
-foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare axm-render-negotiate axm-render-verify-receipt axm-render-external native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer contract_silent_renderer contract_caps_only_renderer state_residency_bench)
+foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare axm-render-negotiate axm-render-verify-receipt axm-render-external imagemagick_svg_renderer native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer contract_silent_renderer contract_caps_only_renderer state_residency_bench)
   if (MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive-)
   else()
@@ -107,6 +111,13 @@ configure_file(
   ${CMAKE_CURRENT_BINARY_DIR}/contract-flat-reference.axmrender
   COPYONLY
 )
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/examples/imagemagick-reference.axmrender
+  ${CMAKE_CURRENT_BINARY_DIR}/imagemagick-reference.axmrender
+  COPYONLY
+)
+
+find_program(AXM_IMAGEMAGICK_CONVERT_EXECUTABLE NAMES convert)
 
 enable_testing()
 add_test(NAME deterministic-reference-render COMMAND axm-render --self-test)
@@ -344,5 +355,46 @@ set_tests_properties(
     FIXTURES_REQUIRED contract_flat_small_receipt
     WILL_FAIL TRUE
 )
+
+if (AXM_IMAGEMAGICK_CONVERT_EXECUTABLE)
+  add_test(
+    NAME external-process-imagemagick-dispatch
+    COMMAND axm-render-external
+      --renderer $<TARGET_FILE:imagemagick_svg_renderer>
+      --request ${CMAKE_CURRENT_BINARY_DIR}/imagemagick-reference.axmrender
+      --receipt ${CMAKE_CURRENT_BINARY_DIR}/external-imagemagick.axmreceipt
+      --capabilities ${CMAKE_CURRENT_BINARY_DIR}/external-imagemagick.axmcaps
+  )
+  set_tests_properties(
+    external-process-imagemagick-dispatch
+    PROPERTIES
+      FIXTURES_SETUP imagemagick_external_receipt
+      ENVIRONMENT "AXM_IMAGEMAGICK_CONVERT=${AXM_IMAGEMAGICK_CONVERT_EXECUTABLE}"
+  )
+  add_test(
+    NAME external-process-imagemagick-compares-native-intent
+    COMMAND axm-render-compare
+      ${CMAKE_CURRENT_BINARY_DIR}/interop-native.axmreceipt
+      ${CMAKE_CURRENT_BINARY_DIR}/external-imagemagick.axmreceipt
+  )
+  set_tests_properties(
+    external-process-imagemagick-compares-native-intent
+    PROPERTIES FIXTURES_REQUIRED "interop_reference_receipts;imagemagick_external_receipt"
+  )
+  add_test(
+    NAME external-process-imagemagick-rejects-native-backend
+    COMMAND axm-render-external
+      --renderer $<TARGET_FILE:imagemagick_svg_renderer>
+      --request ${CMAKE_CURRENT_BINARY_DIR}/reference.axmrender
+      --receipt ${CMAKE_CURRENT_BINARY_DIR}/external-imagemagick-wrong-backend.axmreceipt
+      --capabilities ${CMAKE_CURRENT_BINARY_DIR}/external-imagemagick-wrong-backend.axmcaps
+  )
+  set_tests_properties(
+    external-process-imagemagick-rejects-native-backend
+    PROPERTIES
+      WILL_FAIL TRUE
+      ENVIRONMENT "AXM_IMAGEMAGICK_CONVERT=${AXM_IMAGEMAGICK_CONVERT_EXECUTABLE}"
+  )
+endif()
 
 add_test(NAME state-native-residency-equivalence COMMAND state_residency_bench --self-test)
