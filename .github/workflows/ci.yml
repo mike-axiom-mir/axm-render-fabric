@@ -15,6 +15,14 @@ jobs:
         run: cmake --build build --config Release
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Record renderer capability manifests and negotiation
+        run: |
+          ./build/axm-render --capabilities build/native-evidence.axmcaps
+          ./build/contract_flat_renderer --capabilities build/flat-evidence.axmcaps
+          cat build/native-evidence.axmcaps
+          cat build/flat-evidence.axmcaps
+          ./build/axm-render-negotiate build/reference.axmrender build/native-evidence.axmcaps
+          ./build/axm-render-negotiate build/contract-flat-reference.axmrender build/flat-evidence.axmcaps
       - name: Render native evidence frame and receipt
         run: ./build/axm-render --request build/reference.axmrender --receipt build/frame.axmreceipt
       - name: Record native output and receipt evidence
