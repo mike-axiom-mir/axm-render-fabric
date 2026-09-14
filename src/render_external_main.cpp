@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -30,6 +31,12 @@ struct Args {
     std::string receipt_path;
     std::string capabilities_path;
     std::string expected_capabilities_path;
+};
+
+struct RendererProcessEvidence {
+    std::filesystem::path invocation_path;
+    std::filesystem::path canonical_path;
+    std::uint64_t digest64 = 0;
 };
 
 Args parse_args(int argc, char** argv) {
@@ -59,6 +66,8 @@ Args parse_args(int argc, char** argv) {
                 << "  RENDERER REQUEST RECEIPT\n\n"
                 << "When --expect-capabilities is provided, the freshly discovered manifest\n"
                 << "must semantically match that caller-selected v1 manifest before rendering.\n"
+                << "When the supplied renderer argument resolves directly to a regular file,\n"
+                << "its canonical target and byte digest are continuity-checked across both phases.\n"
                 << "Declared output/receipt/capability paths are cleared before their phase,\n"
                 << "then must be recreated as regular files by that child invocation.\n";
             std::exit(0);
@@ -87,6 +96,77 @@ void reject_path_collision(
     if (a == b) {
         throw std::invalid_argument(
             std::string(a_name) + " path must differ from " + b_name + " path");
+    }
+}
+
+std::optional<RendererProcessEvidence> inspect_renderer_process_evidence(
+    const std::string& executable) {
+    const std::filesystem::path supplied(executable);
+    const bool explicit_path = supplied.is_absolute() || supplied.has_parent_path();
+    const std::filesystem::path invocation_path = normalized_absolute(executable);
+
+    std::error_code ec;
+    const std::filesystem::path canonical_path =
+        std::filesystem::canonical(invocation_path, ec);
+    if (ec) {
+        if (explicit_path) {
+            throw std::runtime_error(
+                "cannot resolve renderer executable path for continuity evidence: " +
+                ec.message());
+        }
+        return std::nullopt;
+    }
+
+    const std::filesystem::file_status status = std::filesystem::status(canonical_path, ec);
+    if (ec || !std::filesystem::is_regular_file(status)) {
+        if (explicit_path) {
+            throw std::runtime_error(
+                "renderer executable path must resolve to a regular file for dispatch");
+        }
+        return std::nullopt;
+    }
+
+    RendererProcessEvidence evidence;
+    evidence.invocation_path = invocation_path;
+    evidence.canonical_path = canonical_path;
+    evidence.digest64 = axm::render::continuity_digest64_file(canonical_path.string());
+    return evidence;
+}
+
+void reject_mutable_artifact_collision_with_renderer(
+    const std::filesystem::path& artifact_path,
+    const char* artifact_name,
+    const RendererProcessEvidence& renderer) {
+    reject_path_collision(
+        artifact_path,
+        artifact_name,
+        renderer.invocation_path,
+        "renderer executable");
+    if (renderer.canonical_path != renderer.invocation_path) {
+        reject_path_collision(
+            artifact_path,
+            artifact_name,
+            renderer.canonical_path,
+            "renderer executable target");
+    }
+}
+
+void require_renderer_process_unchanged(const RendererProcessEvidence& expected) {
+    std::error_code ec;
+    const std::filesystem::path observed_canonical =
+        std::filesystem::canonical(expected.invocation_path, ec);
+    if (ec) {
+        throw std::runtime_error(
+            "renderer executable path became unavailable during external dispatch: " +
+            ec.message());
+    }
+    if (observed_canonical != expected.canonical_path) {
+        throw std::runtime_error(
+            "renderer executable target changed during external dispatch");
+    }
+    if (axm::render::continuity_digest64_file(observed_canonical.string()) != expected.digest64) {
+        throw std::runtime_error(
+            "renderer executable bytes changed during external dispatch");
     }
 }
 
@@ -267,6 +347,8 @@ int main(int argc, char** argv) {
         axm::render::load_scene_file(request.scene_path);
         require_digest_unchanged(request.scene_path, scene_digest, "scene source");
 
+        const auto renderer_process_evidence =
+            inspect_renderer_process_evidence(args.renderer_executable);
         const auto request_path = normalized_absolute(args.request_path);
         const auto scene_path = normalized_absolute(request.scene_path);
         const auto output_path = normalized_absolute(request.output_path);
@@ -286,6 +368,22 @@ int main(int argc, char** argv) {
         reject_path_collision(capabilities_path, "capabilities", scene_path, "scene source");
         reject_path_collision(capabilities_path, "capabilities", output_path, "render output");
         reject_path_collision(capabilities_path, "capabilities", receipt_path, "receipt");
+
+        if (renderer_process_evidence.has_value()) {
+            reject_mutable_artifact_collision_with_renderer(
+                output_path,
+                "render output",
+                *renderer_process_evidence);
+            reject_mutable_artifact_collision_with_renderer(
+                receipt_path,
+                "receipt",
+                *renderer_process_evidence);
+            reject_mutable_artifact_collision_with_renderer(
+                capabilities_path,
+                "capabilities",
+                *renderer_process_evidence);
+            require_renderer_process_unchanged(*renderer_process_evidence);
+        }
 
         std::uint64_t expected_capabilities_digest = 0;
         axm::render::RenderCapabilities expected_capabilities;
@@ -324,6 +422,9 @@ int main(int argc, char** argv) {
             {"--capabilities", args.capabilities_path},
             "capability-discovery");
         require_fresh_regular_artifact(capabilities_path, "capability manifest");
+        if (renderer_process_evidence.has_value()) {
+            require_renderer_process_unchanged(*renderer_process_evidence);
+        }
 
         require_digest_unchanged(args.request_path, request_digest, "render request source");
         require_digest_unchanged(request.scene_path, scene_digest, "scene source");
@@ -359,12 +460,18 @@ int main(int argc, char** argv) {
 
         clear_declared_artifact_path(output_path, "render output");
         clear_declared_artifact_path(receipt_path, "receipt");
+        if (renderer_process_evidence.has_value()) {
+            require_renderer_process_unchanged(*renderer_process_evidence);
+        }
         run_required(
             args.renderer_executable,
             {args.request_path, args.receipt_path},
             "render");
         require_fresh_regular_artifact(output_path, "render output");
         require_fresh_regular_artifact(receipt_path, "receipt");
+        if (renderer_process_evidence.has_value()) {
+            require_renderer_process_unchanged(*renderer_process_evidence);
+        }
 
         require_digest_unchanged(args.request_path, request_digest, "render request source");
         require_digest_unchanged(request.scene_path, scene_digest, "scene source");
@@ -385,8 +492,20 @@ int main(int argc, char** argv) {
                 args.capabilities_path);
         const axm::render::RenderReceipt receipt =
             axm::render::load_render_receipt_file(args.receipt_path);
+        if (renderer_process_evidence.has_value()) {
+            require_renderer_process_unchanged(*renderer_process_evidence);
+        }
 
         std::cout << "renderer_process=" << args.renderer_executable << "\n";
+        if (renderer_process_evidence.has_value()) {
+            std::cout << "renderer_process_canonical_path="
+                      << renderer_process_evidence->canonical_path.string() << "\n";
+            std::cout << "renderer_process_digest64="
+                      << axm::render::digest64_hex(renderer_process_evidence->digest64) << "\n";
+            std::cout << "renderer_process_continuity=PASS\n";
+        } else {
+            std::cout << "renderer_process_continuity=UNAVAILABLE\n";
+        }
         std::cout << "renderer=" << receipt.renderer << "\n";
         std::cout << "renderer_version=" << receipt.renderer_version << "\n";
         std::cout << "backend=" << receipt.backend << "\n";

@@ -355,6 +355,15 @@ set_tests_properties(
     FIXTURES_REQUIRED contract_flat_small_receipt
     WILL_FAIL TRUE
 )
+add_test(
+  NAME external-process-preserves-renderer-process-identity
+  COMMAND ${CMAKE_COMMAND}
+    -DHARNESS=$<TARGET_FILE:axm-render-external>
+    -DRENDERER=$<TARGET_FILE:contract_flat_renderer>
+    -DSCENE=${CMAKE_CURRENT_SOURCE_DIR}/examples/reference.axmscene
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/renderer-process-continuity-guard
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/renderer_process_continuity_guard.cmake
+)
 
 if (AXM_IMAGEMAGICK_CONVERT_EXECUTABLE)
   add_test(
