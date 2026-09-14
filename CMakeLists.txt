@@ -137,6 +137,7 @@ add_test(
     ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmrender
     ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmreceipt
 )
+set_tests_properties(contract-flat-renderer-writes-pixels-and-receipt PROPERTIES FIXTURES_SETUP contract_flat_small_receipt)
 add_test(
   NAME contract-flat-renderer-rejects-native-backend
   COMMAND contract_flat_renderer
@@ -166,5 +167,17 @@ add_test(
     ${CMAKE_CURRENT_BINARY_DIR}/interop-flat.axmreceipt
 )
 set_tests_properties(interop-compare-reference-receipts PROPERTIES FIXTURES_REQUIRED interop_reference_receipts)
+add_test(
+  NAME interop-compare-rejects-different-dimensions
+  COMMAND axm-render-compare
+    ${CMAKE_CURRENT_BINARY_DIR}/interop-native.axmreceipt
+    ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmreceipt
+)
+set_tests_properties(
+  interop-compare-rejects-different-dimensions
+  PROPERTIES
+    FIXTURES_REQUIRED "interop_reference_receipts;contract_flat_small_receipt"
+    WILL_FAIL TRUE
+)
 
 add_test(NAME state-native-residency-equivalence COMMAND state_residency_bench --self-test)
