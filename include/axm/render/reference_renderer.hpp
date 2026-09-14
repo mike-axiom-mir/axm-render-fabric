@@ -8,6 +8,8 @@
 
 namespace axm::render {
 
+inline constexpr const char* native_reference_renderer_version = "0.1.0";
+
 class Image {
 public:
     Image(int width, int height, Color clear);
