@@ -1,0 +1,8 @@
+# Real external-renderer adapter request: AXM scene -> PostScript -> Ghostscript -> PPM.
+AXM_RENDER_REQUEST 1
+scene reference.axmscene
+backend external.ghostscript.postscript-raster
+width 320
+height 180
+format ppm-rgb8
+output ghostscript-reference.ppm
