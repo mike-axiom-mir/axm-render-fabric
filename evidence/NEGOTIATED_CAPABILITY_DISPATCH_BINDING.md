@@ -28,12 +28,22 @@ The option is additive. Existing callers that do not supply `--expect-capabiliti
 
 ## Executable acceptance evidence
 
-The standard CI lane is required to prove both directions:
+PR-head implementation commit `4739b4714e67ae53c9beb85f399826262e777b37` was exercised by both repository workflows before this evidence-only update:
 
-- positive: a flat-renderer manifest generated before dispatch is supplied as the expected manifest; a separately generated fresh manifest must match and the render/receipt path must complete with `expected_capabilities_match=PASS`;
-- negative: the same otherwise-compatible flat manifest is altered only in renderer identity; fresh capability discovery must reject the mismatch before a receipt is produced.
+- standard CI run `34895084478`: **PASS**;
+- dedicated Ghostscript external-render run `34895084570`: **PASS**;
+- configure/build: **PASS** on Ubuntu 24.04.5 with GCC 13.3.0;
+- complete CTest suite: **38/38 PASS**.
 
-Final observed run/commit evidence is recorded here only after the PR-head workflow finishes.
+The standard CI lane proved both directions:
+
+- positive: a flat-renderer manifest generated before dispatch was supplied through `--expect-capabilities`; a separately generated fresh manifest matched the complete v1 capability meaning and dispatch completed with `expected_capabilities_match=PASS` and `external_process_dispatch=PASS`;
+- observed expected-manifest continuity digest: `0xe26ebc23e2862fc1`;
+- observed separately generated fresh-manifest digest: `0xe26ebc23e2862fc1`;
+- resulting same-intent flat frame pixel digest remained `0x5338e2b2729f1381`;
+- negative: an otherwise-compatible expected manifest was changed only from renderer `axm.contract.flat-demo` to `axm.contract.flat-demo-mismatch`; dispatch exited non-zero with a renderer-identity mismatch before the render phase produced a receipt.
+
+Existing evidence paths remained green in the same run, including native rendering, flat rendering, capability negotiation, receipt replay, ImageMagick delegation, and the complete Ghostscript-enabled CTest suite. The native reference frame digest remained `0x456f404dd94c91da`; ImageMagick remained `0x8d283e4b5e79fd9f`. These continuity observations are not visual-quality or cross-machine-determinism claims.
 
 ## Four-root gate
 
