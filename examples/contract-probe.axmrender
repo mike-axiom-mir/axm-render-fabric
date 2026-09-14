@@ -1,0 +1,7 @@
+AXM_RENDER_REQUEST 1
+scene reference.axmscene
+backend axm.mock.contract-probe
+width 64
+height 36
+format ppm-rgb8
+output contract-probe.ppm
