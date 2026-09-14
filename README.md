@@ -8,11 +8,17 @@ The architectural direction is deliberately broader than "a renderer inside a ga
 
 The repository contains a tiny dependency-free C++ reference renderer. It is intentionally small and honest: it rasterizes triangles with a depth buffer and simple directional Lambert lighting, writes a PPM frame, and exposes same-run frame hashing.
 
-The renderer is separated from the CLI as the `axm_render_native` static library. Scene primitives now live in the renderer-neutral `include/axm/render/scene_contract.hpp`, while `include/axm/render/reference_renderer.hpp` exposes the native image/renderer surface. The `axm-render` command is a thin client of that library, and independent CTest clients exercise direct-library rendering, file-loaded scene state, and file-loaded render requests.
+The renderer is separated from the CLI as the `axm_render_native` static library. Scene primitives live in the renderer-neutral `include/axm/render/scene_contract.hpp`, while `include/axm/render/reference_renderer.hpp` exposes the native image/renderer surface. The `axm-render` command is a thin client of that library, and independent CTest clients exercise direct-library rendering, file-loaded scene state, file-loaded render requests, and render-receipt round trips.
 
-The first on-disk interoperability boundaries are executable: `AXM_SCENE 1` is a deliberately tiny, versioned triangle-only scene-state format, and `AXM_RENDER_REQUEST 1` is a deliberately tiny request envelope for scene path, backend identifier, dimensions, output format, and output path. Incompatible changes require new versions, and unsupported versions/directives are rejected instead of being guessed.
+Three small on-disk interoperability boundaries are now executable:
 
-The native executable currently implements backend identifier `axm.native.cpu.reference` and rejects other requested backends rather than silently substituting itself. That creates a stable place for future adapters without claiming those adapters exist yet.
+- `AXM_SCENE 1` — a deliberately tiny triangle-only scene-state format;
+- `AXM_RENDER_REQUEST 1` — a request envelope for scene path, backend identifier, dimensions, output format, and output path;
+- `AXM_RENDER_RECEIPT 1` — a renderer-neutral evidence record binding renderer/backend/settings to scene/request source-byte continuity digests plus pixel/output digests.
+
+Incompatible changes require new versions, and unsupported versions/directives are rejected instead of being guessed. The native executable implements backend identifier `axm.native.cpu.reference` and rejects other requested backends rather than silently substituting itself. Receipt read/write support is shared through the library so future adapters can use the same evidence shape.
+
+The receipt digests are deliberately non-cryptographic continuity evidence. They do not prove authenticity, collision resistance, visual quality, exact source-commit provenance, or cross-machine determinism.
 
 It is **not** yet a stable C++ ABI/API promise, installed package, GPU renderer, PBR renderer, complete canonical scene format, external-renderer adapter, game engine, V-Ray replacement, browser renderer, or proof of cross-backend pixel equivalence.
 
@@ -25,11 +31,12 @@ ctest --test-dir build --output-on-failure
 ./build/axm-render --out frame.ppm
 ./build/axm-render --scene examples/reference.axmscene --out scene-frame.ppm
 ./build/axm-render --request examples/reference.axmrender
+./build/axm-render --request examples/reference.axmrender --receipt frame.axmreceipt
 ```
 
 A parent CMake build that includes this repository with `add_subdirectory(...)` can link native C++ code against the in-tree alias target `axm::render_native`. Packaging/install/export rules are not claimed yet.
 
-See `docs/SCENE_CONTRACT_V1.md` and `docs/RENDER_REQUEST_V1.md` for the exact frozen minimal interchange subsets and truth boundaries.
+See `docs/SCENE_CONTRACT_V1.md`, `docs/RENDER_REQUEST_V1.md`, and `docs/RENDER_RECEIPT_V1.md` for the exact frozen minimal interchange/evidence subsets and truth boundaries.
 
 ## Direction
 
@@ -46,6 +53,8 @@ renderer           browser          adapters
    +------------------+----------------+
                       |
                     pixels
+                      |
+              render receipt
                       |
                visual evidence
                       |
