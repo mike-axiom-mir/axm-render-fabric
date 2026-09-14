@@ -19,4 +19,13 @@ RenderReceiptVerification verify_render_receipt_files(
     const std::string& request_path,
     const std::string& receipt_path);
 
+// Perform the same replay verification, then corroborate the receipt's declared
+// renderer identity/version/backend and frozen v1 support against one current
+// AXM_RENDER_CAPABILITIES 1 manifest. The capability manifest is external
+// corroboration: receipt v1 does not embed or authenticate its bytes.
+RenderReceiptVerification verify_render_receipt_files_with_capabilities(
+    const std::string& request_path,
+    const std::string& receipt_path,
+    const std::string& capabilities_path);
+
 } // namespace axm::render
