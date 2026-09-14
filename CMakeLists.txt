@@ -398,3 +398,5 @@ if (AXM_IMAGEMAGICK_CONVERT_EXECUTABLE)
 endif()
 
 add_test(NAME state-native-residency-equivalence COMMAND state_residency_bench --self-test)
+
+include(cmake/ghostscript_external.cmake)
