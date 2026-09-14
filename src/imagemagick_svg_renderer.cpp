@@ -27,12 +27,115 @@ namespace {
 
 constexpr const char* adapter_backend = "external.imagemagick.svg-raster";
 constexpr const char* adapter_renderer = "axm.adapter.imagemagick-svg";
-constexpr const char* adapter_version = "0.1.0";
+constexpr const char* adapter_version_base = "0.2.0";
 
-axm::render::RenderCapabilities adapter_capabilities() {
+struct DelegatedRendererIdentity {
+    std::filesystem::path resolved_executable;
+    std::uint64_t executable_digest64 = 0;
+    std::string bound_adapter_version;
+};
+
+std::vector<std::string> executable_suffixes(const std::filesystem::path& executable) {
+#ifdef _WIN32
+    if (executable.has_extension()) return {""};
+
+    std::vector<std::string> suffixes;
+    const char* raw_pathext = std::getenv("PATHEXT");
+    const std::string pathext = raw_pathext && *raw_pathext != '\0'
+        ? raw_pathext
+        : ".COM;.EXE;.BAT;.CMD";
+    std::size_t begin = 0;
+    while (begin <= pathext.size()) {
+        const std::size_t end = pathext.find(';', begin);
+        std::string suffix = pathext.substr(begin, end - begin);
+        if (!suffix.empty()) suffixes.push_back(suffix);
+        if (end == std::string::npos) break;
+        begin = end + 1;
+    }
+    if (suffixes.empty()) suffixes.push_back("");
+    return suffixes;
+#else
+    (void)executable;
+    return {""};
+#endif
+}
+
+std::filesystem::path canonical_regular_file(const std::filesystem::path& candidate) {
+    std::error_code ec;
+    const auto status = std::filesystem::status(candidate, ec);
+    if (ec || !std::filesystem::is_regular_file(status)) return {};
+
+    const auto resolved = std::filesystem::canonical(candidate, ec);
+    if (ec || resolved.empty()) return {};
+    return resolved;
+}
+
+std::filesystem::path resolve_executable_path(const std::string& executable) {
+    const std::filesystem::path command(executable);
+    const auto suffixes = executable_suffixes(command);
+
+    auto try_base = [&](const std::filesystem::path& base) -> std::filesystem::path {
+        for (const auto& suffix : suffixes) {
+            std::filesystem::path candidate = base;
+            candidate += suffix;
+            const auto resolved = canonical_regular_file(candidate);
+            if (!resolved.empty()) return resolved;
+        }
+        return {};
+    };
+
+    if (command.is_absolute() || command.has_parent_path()) {
+        const auto resolved = try_base(command);
+        if (!resolved.empty()) return resolved;
+        throw std::runtime_error(
+            "cannot resolve delegated ImageMagick executable to a regular file: " + executable);
+    }
+
+    const char* raw_path = std::getenv("PATH");
+    if (raw_path == nullptr || *raw_path == '\0') {
+        throw std::runtime_error(
+            "cannot resolve delegated ImageMagick executable because PATH is empty: " + executable);
+    }
+
+    const std::string path_list(raw_path);
+#ifdef _WIN32
+    constexpr char separator = ';';
+#else
+    constexpr char separator = ':';
+#endif
+    std::size_t begin = 0;
+    while (begin <= path_list.size()) {
+        const std::size_t end = path_list.find(separator, begin);
+        const std::string entry = path_list.substr(begin, end - begin);
+        const std::filesystem::path directory = entry.empty()
+            ? std::filesystem::current_path()
+            : std::filesystem::path(entry);
+        const auto resolved = try_base(directory / command);
+        if (!resolved.empty()) return resolved;
+        if (end == std::string::npos) break;
+        begin = end + 1;
+    }
+
+    throw std::runtime_error(
+        "cannot resolve delegated ImageMagick executable on PATH: " + executable);
+}
+
+DelegatedRendererIdentity delegated_renderer_identity(const std::string& executable) {
+    const auto resolved = resolve_executable_path(executable);
+    const std::uint64_t digest = axm::render::continuity_digest64_file(resolved.string());
+    const std::string digest_hex = axm::render::digest64_hex(digest);
+    return {
+        resolved,
+        digest,
+        std::string(adapter_version_base) + "+delegated-fnv64-" + digest_hex.substr(2)
+    };
+}
+
+axm::render::RenderCapabilities adapter_capabilities(
+    const DelegatedRendererIdentity& delegated) {
     return {
         adapter_renderer,
-        adapter_version,
+        delegated.bound_adapter_version,
         adapter_backend,
         axm::render::scene_contract_version,
         axm::render::render_request_contract_version,
@@ -255,16 +358,24 @@ void require_digest_unchanged(
 int main(int argc, char** argv) {
     try {
         const std::string convert = imagemagick_executable();
+        const DelegatedRendererIdentity delegated = delegated_renderer_identity(convert);
 
         if (argc == 3 && std::string(argv[1]) == "--capabilities") {
             require_process_success(convert, {"-version"}, "availability check");
-            const auto capabilities = adapter_capabilities();
+            require_digest_unchanged(
+                delegated.resolved_executable.string(),
+                delegated.executable_digest64,
+                "delegated ImageMagick executable");
+            const auto capabilities = adapter_capabilities(delegated);
             axm::render::write_render_capabilities_file(argv[2], capabilities);
             std::cout << "renderer=" << capabilities.renderer << "\n";
             std::cout << "renderer_version=" << capabilities.renderer_version << "\n";
             std::cout << "backend=" << capabilities.backend << "\n";
             std::cout << "delegated_renderer=ImageMagick-convert\n";
-            std::cout << "delegated_renderer_version_bound_in_receipt=NO\n";
+            std::cout << "delegated_executable=" << delegated.resolved_executable.string() << "\n";
+            std::cout << "delegated_executable_digest64="
+                      << axm::render::digest64_hex(delegated.executable_digest64) << "\n";
+            std::cout << "delegated_renderer_identity_bound_in_receipt=YES_NON_CRYPTOGRAPHIC\n";
             std::cout << "capabilities=" << argv[2] << "\n";
             return 0;
         }
@@ -312,6 +423,10 @@ int main(int argc, char** argv) {
                 "rgb:" + raw_path.string()
             },
             "SVG rasterization");
+        require_digest_unchanged(
+            delegated.resolved_executable.string(),
+            delegated.executable_digest64,
+            "delegated ImageMagick executable");
 
         const auto pixels = load_raw_rgb8(raw_path, request.width, request.height);
         require_digest_unchanged(request_path, request_digest, "render request source");
@@ -324,7 +439,7 @@ int main(int argc, char** argv) {
 
         const axm::render::RenderReceipt receipt{
             adapter_renderer,
-            adapter_version,
+            delegated.bound_adapter_version,
             request.backend,
             axm::render::scene_contract_version,
             axm::render::render_request_contract_version,
@@ -339,9 +454,13 @@ int main(int argc, char** argv) {
         axm::render::write_render_receipt_file(receipt_path, receipt);
 
         std::cout << "renderer=" << adapter_renderer << "\n";
-        std::cout << "renderer_version=" << adapter_version << "\n";
+        std::cout << "renderer_version=" << delegated.bound_adapter_version << "\n";
         std::cout << "backend=" << request.backend << "\n";
         std::cout << "delegated_renderer=ImageMagick-convert\n";
+        std::cout << "delegated_executable=" << delegated.resolved_executable.string() << "\n";
+        std::cout << "delegated_executable_digest64="
+                  << axm::render::digest64_hex(delegated.executable_digest64) << "\n";
+        std::cout << "delegated_renderer_identity_bound_in_receipt=YES_NON_CRYPTOGRAPHIC\n";
         std::cout << "scene_triangles=" << scene.triangles.size() << "\n";
         std::cout << "translation=axm-scene-v1-to-svg-xy-flat-albedo\n";
         std::cout << "frame_pixels_digest64=" << axm::render::digest64_hex(frame_digest) << "\n";
