@@ -1,7 +1,10 @@
 #pragma once
 
+#include "axm/render/scene_contract.hpp"
+
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace axm::render {
 
@@ -25,6 +28,7 @@ struct RenderReceipt {
 // AXM continuity digest64 v1 deliberately matches the repository's existing
 // frame-hash parameters. It is non-cryptographic evidence, not an integrity or
 // collision-resistance primitive.
+std::uint64_t continuity_digest64_rgb8(const std::vector<Color>& pixels) noexcept;
 std::uint64_t continuity_digest64_file(const std::string& path);
 std::string digest64_hex(std::uint64_t value);
 
