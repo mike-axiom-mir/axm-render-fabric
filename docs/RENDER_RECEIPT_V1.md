@@ -29,7 +29,7 @@ frame_pixels_digest64 0x0000000000000000
 output_file_digest64 0x0000000000000000
 ```
 
-Blank lines and `#` comments are ignored by the parser. Values are single whitespace-free tokens. Digest values are `0x` plus exactly 16 hexadecimal digits. Unknown directives, duplicate directives, unsupported receipt versions, malformed digests, non-positive dimensions, missing fields, and trailing tokens are rejected.
+Blank lines and `#` comments are ignored by the parser. Values are single tokens containing neither whitespace nor `#`; the writer rejects values that would be truncated by comment parsing. Digest values are `0x` plus exactly 16 hexadecimal digits. Unknown directives, duplicate directives, unsupported receipt versions, malformed digests, non-positive dimensions, missing fields, and trailing tokens are rejected.
 
 Field order is not semantically significant to the parser. The AXM writer emits the canonical order shown above.
 
