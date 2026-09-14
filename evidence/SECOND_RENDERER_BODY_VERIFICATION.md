@@ -1,5 +1,7 @@
 # Second renderer body verification
 
+> **Correction (2026-09-14):** the historical flat `frame_pixels_digest64=0x00d03224c187ea45` recorded below was produced by a body-local offset basis inconsistent with the frozen `AXM_RENDER_RECEIPT 1` digest semantics. Fresh verified v1 value for this 64x36 request is `0x5c48decbca7cb29f`. See `RECEIPT_FRAME_DIGEST_CONSISTENCY_CORRECTION.md`. The historical pixel/output evidence remains useful, but the old frame-digest field must not be treated as valid receipt-v1 evidence.
+
 ## Purpose
 
 Turn the renderer-neutral contract boundary into one more executable step without weakening the AXM-owned native renderer. The new `contract_flat_renderer` links only `axm_render_contracts`, consumes `AXM_RENDER_REQUEST 1` plus `AXM_SCENE 1`, writes `ppm-rgb8` pixels, and emits an `AXM_RENDER_RECEIPT 1`.
@@ -58,7 +60,7 @@ The emitted receipt bound the same scene source digest used by the native path (
 
 The native reference evidence in the same run remained `frame_pixels_digest64=0x456f404dd94c91da` with PPM SHA-256 `c81172b1e42106b4a1032e4c6873974202e8a57efb76d7c7cb881ea568aa6beb`.
 
-These values are continuity evidence for that CI execution, not a general determinism guarantee.
+These values are continuity evidence for that CI execution, not a general determinism guarantee. The correction notice above supersedes only the historical flat frame-digest interpretation.
 
 ## Truth boundary
 
