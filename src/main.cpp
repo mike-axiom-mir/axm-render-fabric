@@ -1,4 +1,5 @@
 #include "axm/render/reference_renderer.hpp"
+#include "axm/render/render_capabilities.hpp"
 #include "axm/render/render_contract.hpp"
 #include "axm/render/render_receipt.hpp"
 #include "axm/render/scene_contract.hpp"
@@ -20,6 +21,19 @@ static render::SceneState demo_scene() {
     }};
 }
 
+static render::RenderCapabilities native_capabilities() {
+    return {
+        render::native_reference_backend,
+        render::native_reference_renderer_version,
+        render::native_reference_backend,
+        render::scene_contract_version,
+        render::render_request_contract_version,
+        8192,
+        8192,
+        {"ppm-rgb8"}
+    };
+}
+
 struct Args {
     int width = 320;
     int height = 180;
@@ -27,12 +41,14 @@ struct Args {
     std::string scene_path;
     std::string request_path;
     std::string receipt_path;
+    std::string capabilities_path;
     bool self_test = false;
     bool width_set = false;
     bool height_set = false;
     bool output_set = false;
     bool scene_set = false;
     bool receipt_set = false;
+    bool capabilities_set = false;
 };
 
 static Args parse_args(int argc, char** argv) {
@@ -46,6 +62,9 @@ static Args parse_args(int argc, char** argv) {
         } else if (a == "--receipt" && i + 1 < argc) {
             args.receipt_path = argv[++i];
             args.receipt_set = true;
+        } else if (a == "--capabilities" && i + 1 < argc) {
+            args.capabilities_path = argv[++i];
+            args.capabilities_set = true;
         } else if (a == "--scene" && i + 1 < argc) {
             args.scene_path = argv[++i];
             args.scene_set = true;
@@ -62,6 +81,7 @@ static Args parse_args(int argc, char** argv) {
             std::cout << "AXM Render Fabric reference renderer\n"
                       << "  --request PATH        load AXM_RENDER_REQUEST v1 (scene/backend/dimensions/format/output)\n"
                       << "  --receipt PATH        write AXM_RENDER_RECEIPT v1 for a request render\n"
+                      << "  --capabilities PATH   write AXM_RENDER_CAPABILITIES v1 and exit\n"
                       << "  --scene PATH          load AXM_SCENE v1 state from disk\n"
                       << "  --self-test           render twice and verify identical frame hashes\n"
                       << "  --out PATH            output PPM path (default frame.ppm)\n"
@@ -81,6 +101,11 @@ static Args parse_args(int argc, char** argv) {
     if (args.receipt_set && args.self_test) {
         throw std::invalid_argument("--receipt cannot be combined with --self-test because self-test does not write output");
     }
+    if (args.capabilities_set &&
+        (!args.request_path.empty() || args.receipt_set || args.scene_set || args.output_set ||
+         args.width_set || args.height_set || args.self_test)) {
+        throw std::invalid_argument("--capabilities is a discovery-only operation and cannot be combined with rendering arguments");
+    }
     if (args.width <= 0 || args.height <= 0 || args.width > 8192 || args.height > 8192) {
         throw std::invalid_argument("width/height must be in the range 1..8192");
     }
@@ -96,6 +121,18 @@ static std::filesystem::path normalized_absolute(const std::string& path) {
 int main(int argc, char** argv) {
     try {
         const axm::Args args = axm::parse_args(argc, argv);
+
+        if (args.capabilities_set) {
+            const auto capabilities = axm::native_capabilities();
+            axm::render::write_render_capabilities_file(args.capabilities_path, capabilities);
+            std::cout << "capabilities=" << args.capabilities_path << "\n";
+            std::cout << "backend=" << capabilities.backend << "\n";
+            std::cout << "scene_contract=" << capabilities.scene_contract << "\n";
+            std::cout << "render_request_contract=" << capabilities.render_request_contract << "\n";
+            std::cout << "max_dimensions=" << capabilities.max_width << "x" << capabilities.max_height << "\n";
+            std::cout << "format=ppm-rgb8\n";
+            return 0;
+        }
 
         int width = args.width;
         int height = args.height;
