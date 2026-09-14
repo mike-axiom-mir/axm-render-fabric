@@ -15,7 +15,9 @@ jobs:
         run: cmake --build build --config Release
       - name: Test
         run: ctest --test-dir build --output-on-failure
-      - name: Render evidence frame
-        run: ./build/axm-render --out build/frame.ppm
-      - name: Record frame digest
-        run: sha256sum build/frame.ppm
+      - name: Render evidence frame and receipt
+        run: ./build/axm-render --request build/reference.axmrender --receipt build/frame.axmreceipt
+      - name: Record output and receipt evidence
+        run: |
+          sha256sum build/request-frame.ppm
+          cat build/frame.axmreceipt
