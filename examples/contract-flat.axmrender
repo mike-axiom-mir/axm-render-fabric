@@ -1,0 +1,8 @@
+# Minimal second pixel-producing renderer body consuming shared contracts.
+AXM_RENDER_REQUEST 1
+scene reference.axmscene
+backend axm.contract.cpu.flat
+width 64
+height 36
+format ppm-rgb8
+output contract-flat.ppm
