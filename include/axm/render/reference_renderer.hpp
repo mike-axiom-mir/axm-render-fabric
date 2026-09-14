@@ -1,32 +1,12 @@
 #pragma once
 
-#include <array>
+#include "axm/render/scene_contract.hpp"
+
 #include <cstdint>
 #include <string>
 #include <vector>
 
 namespace axm::render {
-
-struct Vec3 {
-    float x{};
-    float y{};
-    float z{};
-};
-
-struct Color {
-    std::uint8_t r{};
-    std::uint8_t g{};
-    std::uint8_t b{};
-};
-
-struct Vertex {
-    Vec3 position;
-};
-
-struct Triangle {
-    std::array<Vertex, 3> v;
-    Color albedo;
-};
 
 class Image {
 public:
