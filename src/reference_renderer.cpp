@@ -1,4 +1,5 @@
 #include "axm/render/reference_renderer.hpp"
+#include "axm/render/render_receipt.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -170,16 +171,7 @@ Image ReferenceRenderer::render(const std::vector<Triangle>& triangles) const {
 }
 
 std::uint64_t fnv1a(const Image& image) noexcept {
-    std::uint64_t hash = 1469598103934665603ULL;
-    constexpr std::uint64_t prime = 1099511628211ULL;
-    for (const auto& p : image.pixels()) {
-        const std::uint8_t bytes[3] = {p.r, p.g, p.b};
-        for (std::uint8_t b : bytes) {
-            hash ^= b;
-            hash *= prime;
-        }
-    }
-    return hash;
+    return continuity_digest64_rgb8(image.pixels());
 }
 
 } // namespace axm::render

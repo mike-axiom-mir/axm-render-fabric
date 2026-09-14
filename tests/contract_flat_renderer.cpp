@@ -87,20 +87,6 @@ void rasterize_triangle(
     }
 }
 
-std::uint64_t digest_pixels(const std::vector<axm::render::Color>& pixels) noexcept {
-    std::uint64_t hash = 14695981039346656037ULL;
-    constexpr std::uint64_t prime = 1099511628211ULL;
-    for (const auto& pixel : pixels) {
-        hash ^= pixel.r;
-        hash *= prime;
-        hash ^= pixel.g;
-        hash *= prime;
-        hash ^= pixel.b;
-        hash *= prime;
-    }
-    return hash;
-}
-
 void write_ppm(
     const std::string& path,
     int width,
@@ -197,7 +183,7 @@ int main(int argc, char** argv) {
         }
 
         write_ppm(request.output_path, request.width, request.height, pixels);
-        const std::uint64_t frame_digest = digest_pixels(pixels);
+        const std::uint64_t frame_digest = axm::render::continuity_digest64_rgb8(pixels);
         const std::uint64_t output_digest =
             axm::render::continuity_digest64_file(request.output_path);
 
