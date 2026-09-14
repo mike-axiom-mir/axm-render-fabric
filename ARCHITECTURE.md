@@ -15,7 +15,7 @@ This is still narrower than the future render contract: richer settings/formats,
 ### 2.5 Renderer capability discovery
 A renderer body should be able to declare what frozen contract subset it accepts before a dispatcher asks it to render.
 
-The repository owns `AXM_RENDER_CAPABILITIES 1`, a small renderer-neutral declaration containing renderer/version identity, backend identifier, supported scene/request contract versions, maximum request dimensions, and supported output formats. The current native, flat, and ImageMagick adapter bodies can each publish this manifest themselves.
+The repository owns `AXM_RENDER_CAPABILITIES 1`, a small renderer-neutral declaration containing renderer/version identity, backend identifier, supported scene/request contract versions, maximum request dimensions, and supported output formats. The current native, flat, ImageMagick, and Ghostscript adapter bodies can each publish this manifest themselves.
 
 `axm-render-negotiate` checks one `AXM_RENDER_REQUEST 1` plus its referenced `AXM_SCENE 1` source against one capability manifest. Unsupported backend, dimensions, format, or contract versions are explicit incompatibilities. Capability v1 deliberately does not invent feature-level claims for depth, lighting, materials, textures, animation, or other semantics not represented in request v1.
 
@@ -80,16 +80,20 @@ AXM_RENDER_CAPABILITIES v1+--------+-----------------------------+
                          axm-render-compare               axm-render-external
                     comparable intent evidence          process-boundary verify
                     pixel relation reported only                 |
-                                                                v
-                                                imagemagick_svg_renderer
-                                                   AXM scene -> SVG adapter
-                                                                |
-                                                                v
-                                               external ImageMagick `convert`
-                                                  raw RGB8 rasterization
-                                                                |
-                                                                v
-                                                PPM + shared receipt evidence
+                                            +--------------------+--------------------+
+                                            |                                         |
+                                            v                                         v
+                            imagemagick_svg_renderer                   ghostscript_ps_renderer
+                               AXM scene -> SVG adapter                AXM scene -> PostScript
+                                            |                                         |
+                                            v                                         v
+                           external ImageMagick `convert`               external Ghostscript `gs`
+                              raw RGB8 rasterization                    ppmraw rasterization
+                                            |                                         |
+                                            +--------------------+--------------------+
+                                                                 |
+                                                                 v
+                                                   PPM + shared receipt evidence
 ```
 
 `include/axm/render/scene_contract.hpp` owns the renderer-neutral v1 primitive scene types and loader. `include/axm/render/render_contract.hpp` owns the v1 render-request envelope and backend identifier convention. `include/axm/render/render_receipt.hpp` owns the v1 evidence record, continuity file-digest helper, strict parser, and writer. `include/axm/render/render_capabilities.hpp` owns the v1 capability declaration plus request-compatibility check. Those implementations build as `axm_render_contracts` / `axm::render_contracts`.
@@ -104,13 +108,17 @@ The `imagemagick_svg_renderer` executable is the first integration exercise whos
 
 The ImageMagick adapter deliberately does not claim depth, lighting, texture, material, animation, or native-renderer semantics. Its adapter version is now composed with a non-cryptographic continuity digest of the canonical delegated ImageMagick executable bytes (`0.2.0+delegated-fnv64-...`), and the same token is emitted in capability and receipt evidence. The adapter checks those executable bytes remain unchanged across each capability/render phase, and capability-bound replay already requires the capability and receipt renderer versions to match. This binds the observed delegated executable bytes without changing receipt v1 fields. It does not bind ImageMagick semantic-version text as a contract field, dynamically loaded libraries/delegates, policy/configuration, environment, cryptographic provenance, or atomic filesystem race freedom.
 
-The native `axm-render` executable, `contract_flat_renderer`, and `imagemagick_svg_renderer` can each write their own `AXM_RENDER_CAPABILITIES 1` manifest. `axm-render-negotiate` links only to `axm_render_contracts`; it validates the referenced scene with the frozen scene parser and compares the request against the selected manifest. It does not choose another backend, rank renderers, or infer future feature support.
+The `ghostscript_ps_renderer` executable is the second materially different real external-renderer integration exercise. It links only to `axm_render_contracts`, accepts backend `external.ghostscript.postscript-raster`, translates the same frozen ordered-triangle/albedo subset to PostScript, launches an external Ghostscript `gs` process using its `ppmraw` device, consumes the resulting P6 RGB8 output, and emits the shared receipt contract. It is also driven through `axm-render-external`, so the same capability preflight, fresh-artifact enforcement, source continuity checks, and capability-bound receipt replay apply without a Ghostscript-specific dispatcher.
+
+The Ghostscript adapter deliberately makes no depth, lighting, texture, material, animation, visual-equivalence, or native-renderer-semantics claim. Its adapter version includes the same non-cryptographic continuity identity pattern for the observed canonical delegated executable bytes (`0.1.0+delegated-fnv64-...`). That binds the observed executable file bytes into existing capability/receipt identity checks without claiming semantic-version attestation, dependency-closure provenance, sandbox security, or cross-machine determinism.
+
+The native `axm-render` executable, `contract_flat_renderer`, `imagemagick_svg_renderer`, and `ghostscript_ps_renderer` can each write their own `AXM_RENDER_CAPABILITIES 1` manifest. `axm-render-negotiate` links only to `axm_render_contracts`; it validates the referenced scene with the frozen scene parser and compares the request against the selected manifest. It does not choose another backend, rank renderers, or infer future feature support.
 
 The `axm-render-compare` executable links only to `axm_render_contracts`. It does not render and does not depend on either renderer body. It consumes two strict receipt-v1 files, rejects them as incomparable if the declared body-independent v1 frame fields differ, and otherwise reports whether their frame/output continuity digests match. A pixel digest match is only an observed digest relation; a mismatch is allowed for comparable requests and neither outcome is a visual-quality or semantic-equivalence claim.
 
 The native CLI accepts either direct flags or `--request PATH`; request-selected backend identifiers other than `axm.native.cpu.reference` fail explicitly. `--receipt PATH` is deliberately narrower: it currently requires a request-backed render so the receipt can bind explicit scene/request source files rather than inventing missing provenance. `--capabilities PATH` is a discovery-only operation and cannot be combined with rendering arguments.
 
-This proves the AXM-owned renderer can be embedded, renderer-neutral scene/request/receipt/capability code can be consumed without linking the native renderer body, a second repository-owned pixel-producing body can emit the shared receipt contract, an adapter can delegate actual rasterization to a real external ImageMagick process behind the same v1 capability/request/receipt boundary, the observed delegated executable bytes can contribute a non-cryptographic composite renderer identity without changing frozen receipt fields, explicit capability declarations can be checked before dispatch, and shared receipt evidence can compare declared v1 frame intent across bodies without pretending their pixels must match. It does **not** prove a stable C++ ABI/API, a production-grade external renderer integration, semantic-version or dependency-closure attestation of the delegated renderer, feature-level negotiation beyond request v1, automatic fallback selection, cross-backend pixel equivalence, cryptographic provenance, or a complete canonical scene/render model.
+This proves the AXM-owned renderer can be embedded, renderer-neutral scene/request/receipt/capability code can be consumed without linking the native renderer body, a second repository-owned pixel-producing body can emit the shared receipt contract, and two materially different external rasterizers (ImageMagick and Ghostscript) can be delegated behind the same v1 capability/request/receipt process boundary without replacing the AXM-owned native substrate. Observed delegated executable bytes can contribute non-cryptographic composite renderer identity without changing frozen receipt fields, explicit capability declarations can be checked before dispatch, and shared receipt evidence can compare declared v1 frame intent across bodies without pretending their pixels must match. It does **not** prove a stable C++ ABI/API, production-grade external renderer integration, a frozen launcher protocol, semantic-version or dependency-closure attestation of delegated renderers, feature-level negotiation beyond request v1, automatic fallback selection, cross-backend pixel equivalence, cryptographic provenance, or a complete canonical scene/render model.
 
 The repository also contains a first synthetic state-residency benchmark:
 
@@ -145,7 +153,7 @@ See `research/state-native-rendering/README.md`.
 
 ## Next likely gates
 
-1. Exercise a second materially different external renderer before freezing a launcher protocol, or add stronger delegated-runtime provenance only through an explicit additive/new evidence contract if evidence needs exceed the current non-cryptographic executable-byte binding.
+1. Keep the launcher convention experimental while comparing the operational needs of the two real external adapters; freeze/version it only if the shared requirements are evidenced. Add stronger delegated-runtime provenance only through an explicit additive/new evidence contract if evidence needs exceed the current non-cryptographic executable-byte binding.
 2. Add a first GPU backend while retaining the CPU reference path and publishing its own capability manifest.
 3. Extend capability/request contracts only when richer scene features require explicit feature-level negotiation; use a new compatible contract version rather than silently changing v1 meaning.
 4. Add browser/WebGPU only after the shared contract is strong enough to avoid unrelated renderer islands.
