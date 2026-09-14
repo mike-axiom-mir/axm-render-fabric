@@ -1,0 +1,9 @@
+AXM_RENDER_CAPABILITIES 1
+renderer axm.native.cpu.mismatched-test-identity
+renderer_version 0.1.0
+backend axm.native.cpu.reference
+scene_contract 1
+render_request_contract 1
+max_width 8192
+max_height 8192
+format ppm-rgb8
