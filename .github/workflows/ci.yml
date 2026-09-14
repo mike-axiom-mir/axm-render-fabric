@@ -45,3 +45,7 @@ jobs:
           cat build/contract-flat-reference.axmreceipt
           grep -q '^frame_pixels_digest64 0x5338e2b2729f1381$' build/contract-flat-reference.axmreceipt
           ./build/axm-render-compare build/frame.axmreceipt build/contract-flat-reference.axmreceipt
+      - name: Replay-verify receipt evidence against current files
+        run: |
+          ./build/axm-render-verify-receipt build/reference.axmrender build/frame.axmreceipt
+          ./build/axm-render-verify-receipt build/contract-flat-reference.axmrender build/contract-flat-reference.axmreceipt
