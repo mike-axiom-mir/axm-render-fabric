@@ -40,7 +40,24 @@ renderer           browser          adapters
                  observer loop
 ```
 
-The long-term aim is **own one substrate, connect every useful substrate**. See `FOUNDATION.md`, `ARCHITECTURE.md`, and `docs/TRUTH_BOUNDARY.md`.
+The long-term aim is **own one substrate, connect every useful substrate**.
+
+## State-native rendering research
+
+A second path now lives beside the resident reference approach. The question is whether canonical scene state can remain compact while expanded render data is reconstructed, streamed, cached, and evicted on demand without changing the declared result.
+
+Current research tracks include visible-working-set rendering, reconstructable geometry/materials, procedural asset state, disposable caches, dirty-state propagation, state streaming, renderer migration, memory-pressure adaptation, state deltas, and evidence-first render receipts.
+
+The first executable experiment compares a fully expanded repeated-geometry representation against one base mesh plus compact instance state. It verifies equivalent synthetic visible-geometry digests and reports **modeled owned bytes only**; it does not claim real process RSS, GPU VRAM, game performance, or production-renderer savings.
+
+```bash
+./build/state_residency_bench --objects 10000 --visible-percent 10
+./build/state_residency_bench --self-test
+```
+
+See `research/state-native-rendering/README.md` for the research map and truth boundary.
+
+See also `FOUNDATION.md`, `ARCHITECTURE.md`, and `docs/TRUTH_BOUNDARY.md`.
 
 ## License
 
