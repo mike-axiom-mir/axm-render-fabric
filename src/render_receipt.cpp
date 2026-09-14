@@ -101,8 +101,9 @@ void require_output_token(const std::string& field, const std::string& value) {
         throw std::invalid_argument("render receipt " + field + " cannot be empty");
     }
     for (unsigned char c : value) {
-        if (std::isspace(c)) {
-            throw std::invalid_argument("render receipt " + field + " must be one whitespace-free token");
+        if (std::isspace(c) || c == '#') {
+            throw std::invalid_argument(
+                "render receipt " + field + " must be one token without whitespace or #");
         }
     }
 }
