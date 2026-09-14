@@ -9,6 +9,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure ImageMagick external renderer is available
+        run: |
+          if ! command -v convert >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y imagemagick
+          fi
+          convert -version
       - name: Configure
         run: cmake -S . -B build
       - name: Build
@@ -49,3 +56,17 @@ jobs:
         run: |
           ./build/axm-render-verify-receipt build/reference.axmrender build/frame.axmreceipt build/native-evidence.axmcaps
           ./build/axm-render-verify-receipt build/contract-flat-reference.axmrender build/contract-flat-reference.axmreceipt build/flat-evidence.axmcaps
+      - name: Render through real external ImageMagick adapter
+        run: |
+          export AXM_IMAGEMAGICK_CONVERT="$(command -v convert)"
+          convert -version
+          ./build/axm-render-external \
+            --renderer ./build/imagemagick_svg_renderer \
+            --request build/imagemagick-reference.axmrender \
+            --receipt build/imagemagick-evidence.axmreceipt \
+            --capabilities build/imagemagick-evidence.axmcaps
+          cat build/imagemagick-evidence.axmcaps
+          cat build/imagemagick-evidence.axmreceipt
+          sha256sum build/imagemagick-reference.ppm
+          ./build/axm-render-compare build/frame.axmreceipt build/imagemagick-evidence.axmreceipt | tee build/imagemagick-compare.txt
+          grep -q '^comparable_v1=YES$' build/imagemagick-compare.txt
