@@ -88,6 +88,9 @@ void clear_declared_artifact_path(
     const char* label) {
     std::error_code ec;
     const std::filesystem::file_status status = std::filesystem::symlink_status(path, ec);
+    if (ec == std::errc::no_such_file_or_directory) {
+        return;
+    }
     if (ec) {
         throw std::runtime_error(
             std::string("cannot inspect ") + label + " path before dispatch: " +
@@ -113,6 +116,10 @@ void require_fresh_regular_artifact(
     const char* label) {
     std::error_code ec;
     const std::filesystem::file_status status = std::filesystem::symlink_status(path, ec);
+    if (ec == std::errc::no_such_file_or_directory) {
+        throw std::runtime_error(
+            std::string("external renderer did not produce ") + label);
+    }
     if (ec) {
         throw std::runtime_error(
             std::string("cannot inspect produced ") + label + ": " + ec.message());
