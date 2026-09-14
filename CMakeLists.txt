@@ -64,10 +64,17 @@ add_executable(contract_flat_renderer tests/contract_flat_renderer.cpp)
 target_link_libraries(contract_flat_renderer PRIVATE axm_render_contracts)
 target_compile_features(contract_flat_renderer PRIVATE cxx_std_20)
 
+add_executable(contract_silent_renderer tests/contract_silent_renderer.cpp)
+target_compile_features(contract_silent_renderer PRIVATE cxx_std_20)
+
+add_executable(contract_caps_only_renderer tests/contract_caps_only_renderer.cpp)
+target_link_libraries(contract_caps_only_renderer PRIVATE axm_render_contracts)
+target_compile_features(contract_caps_only_renderer PRIVATE cxx_std_20)
+
 add_executable(state_residency_bench research/state-native-rendering/state_residency.cpp)
 target_compile_features(state_residency_bench PRIVATE cxx_std_20)
 
-foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare axm-render-negotiate axm-render-verify-receipt axm-render-external native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer state_residency_bench)
+foreach(target axm_render_contracts axm_render_native axm-render axm-render-compare axm-render-negotiate axm-render-verify-receipt axm-render-external native_library_smoke scene_file_smoke render_request_smoke render_receipt_smoke contract_adapter_probe contract_flat_renderer contract_silent_renderer contract_caps_only_renderer state_residency_bench)
   if (MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive-)
   else()
@@ -309,5 +316,33 @@ add_test(
     --capabilities ${CMAKE_CURRENT_BINARY_DIR}/external-flat-wrong-backend.axmcaps
 )
 set_tests_properties(external-process-rejects-backend-mismatch PROPERTIES WILL_FAIL TRUE)
+add_test(
+  NAME external-process-rejects-stale-capability-artifact
+  COMMAND axm-render-external
+    --renderer $<TARGET_FILE:contract_silent_renderer>
+    --request ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmrender
+    --receipt ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmreceipt
+    --capabilities ${CMAKE_CURRENT_BINARY_DIR}/flat.axmcaps
+)
+set_tests_properties(
+  external-process-rejects-stale-capability-artifact
+  PROPERTIES
+    FIXTURES_REQUIRED "contract_flat_small_receipt;flat_capabilities_manifest"
+    WILL_FAIL TRUE
+)
+add_test(
+  NAME external-process-rejects-stale-render-artifacts
+  COMMAND axm-render-external
+    --renderer $<TARGET_FILE:contract_caps_only_renderer>
+    --request ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmrender
+    --receipt ${CMAKE_CURRENT_BINARY_DIR}/contract-flat.axmreceipt
+    --capabilities ${CMAKE_CURRENT_BINARY_DIR}/external-caps-only.axmcaps
+)
+set_tests_properties(
+  external-process-rejects-stale-render-artifacts
+  PROPERTIES
+    FIXTURES_REQUIRED contract_flat_small_receipt
+    WILL_FAIL TRUE
+)
 
 add_test(NAME state-native-residency-equivalence COMMAND state_residency_bench --self-test)
