@@ -1,9 +1,12 @@
-# Truth Boundary — v0.1
+# Truth Boundary — current foundation
 
 ## Verified by the current implementation
 
-- The repository contains a native C++ executable.
-- It can rasterize triangles into an RGB image buffer.
+- The repository contains a native C++ reference renderer.
+- The native renderer is built as the `axm_render_native` static library with a public C++ header.
+- The `axm-render` CLI links to that library rather than owning a duplicate renderer implementation.
+- A separate `native_library_smoke` test client links directly to the library, renders pixels, validates the image dimensions/buffer size, and compares two same-run frame hashes.
+- The renderer can rasterize triangles into an RGB image buffer.
 - It performs a depth test.
 - It applies simple directional Lambert-style lighting.
 - It writes binary PPM output.
@@ -16,7 +19,10 @@
 ## Not yet claimed
 
 - Cross-machine or cross-compiler bit-for-bit determinism.
+- A stable public ABI or long-term API compatibility guarantee for `axm_render_native`.
+- Install/export/package support for consuming the library outside a source/CMake integration.
 - A stable canonical scene file format.
+- A renderer-neutral render-request contract.
 - GPU rendering.
 - WebGPU/browser rendering.
 - PBR materials, textures, shadows, reflections, path tracing, denoising, or global illumination.
@@ -31,5 +37,7 @@
 - Equivalent final rendered pixels between resident and state-native production backends.
 
 The first state-native benchmark is deliberately synthetic. Its byte counts are a model of memory owned by its chosen C++ containers, not operating-system RSS, allocator telemetry, driver memory, or GPU VRAM. Its digest proves equivalence only for the quantized visible expanded geometry/material IDs used by that experiment.
+
+The new library boundary proves source-level reuse of the existing native reference implementation in the tested build. It does not by itself prove binary compatibility, renderer interchangeability, or an external-backend contract.
 
 A future implementation must move items across this boundary only with reproducible evidence and must name the exact memory/output metric being compared.
