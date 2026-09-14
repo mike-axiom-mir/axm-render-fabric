@@ -15,9 +15,15 @@ jobs:
         run: cmake --build build --config Release
       - name: Test
         run: ctest --test-dir build --output-on-failure
-      - name: Render evidence frame and receipt
+      - name: Render native evidence frame and receipt
         run: ./build/axm-render --request build/reference.axmrender --receipt build/frame.axmreceipt
-      - name: Record output and receipt evidence
+      - name: Record native output and receipt evidence
         run: |
           sha256sum build/request-frame.ppm
           cat build/frame.axmreceipt
+      - name: Render contract-only flat body evidence
+        run: ./build/contract_flat_renderer build/contract-flat.axmrender build/contract-flat.axmreceipt
+      - name: Record contract-only flat body evidence
+        run: |
+          sha256sum build/contract-flat.ppm
+          cat build/contract-flat.axmreceipt
