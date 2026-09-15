@@ -33,6 +33,34 @@ This is repeated observation on one runner, not a controlled performance benchma
 
 Minimum/median/maximum describe only the samples supplied to one invocation. They are not evidence that a renderer is faster or slower than another renderer, and the helper intentionally contains no cross-renderer ranking logic.
 
-## Final-head evidence
+## Observed CI evidence
 
-Pending final PR-head CI. Merge only after the existing repository workflows and the new verified-dispatch sampler workflow are green; replace this section with the observed sample output before merge.
+Executable code head `5b209dd871f4ce67c763bf8c87870f6ba76ab23c` passed all three PR workflows before this evidence-only update:
+
+- Verified Dispatch Sampler run `34918642536`: PASS;
+- standard `ci` run `34918642537`: PASS;
+- `ghostscript-external` run `34918642544`: PASS.
+
+The dedicated sampler ran on Ubuntu 24.04.5 with GCC 13.3.0. Five verified flat-renderer dispatches completed with one stable evidence identity:
+
+- `renderer_process_continuity=PASS`;
+- renderer `axm.contract.flat-demo`, version `0.1.0`, backend `axm.contract.cpu.flat`;
+- renderer-process digest `0x1664974c06a85bfe`;
+- capability digest `0xe26ebc23e2862fc1`;
+- scene digest `0x660a6a3e429b6d1c`;
+- request digest `0x141c5e5603de3d34`;
+- frame-pixel digest `0x5338e2b2729f1381`;
+- output-file digest `0xe47b2ea5622500df`;
+- `verified_dispatch_sample_continuity=PASS`;
+- `verified_dispatch_sampling=PASS`.
+
+Observed timing samples, in microseconds:
+
+- capability process: `1059,927,889,875,872` (min `872`, median `889`, max `1059`);
+- render process: `2241,2236,2202,2175,2219` (min `2175`, median `2219`, max `2241`);
+- receipt verification: `1228,1209,1211,1237,1216` (min `1209`, median `1216`, max `1237`);
+- complete verified dispatch: `5904,5397,5355,5354,5354` (min `5354`, median `5355`, max `5904`).
+
+These values are retained as one-run observations only. They are not promoted to renderer speed, throughput, latency SLA, or cross-machine performance claims.
+
+This commit changes evidence text only. Merge still requires the final PR head, including this evidence update, to pass the repository workflows.
