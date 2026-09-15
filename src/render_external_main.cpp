@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -41,6 +42,15 @@ struct RendererProcessEvidence {
     std::string resolution;
 };
 
+using SteadyClock = std::chrono::steady_clock;
+
+std::uint64_t elapsed_microseconds(
+    const SteadyClock::time_point start,
+    const SteadyClock::time_point end) {
+    const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    return elapsed < 0 ? 0 : static_cast<std::uint64_t>(elapsed);
+}
+
 Args parse_args(int argc, char** argv) {
     Args args;
     for (int i = 1; i < argc; ++i) {
@@ -72,7 +82,10 @@ Args parse_args(int argc, char** argv) {
                 << "pinned to one invocation path; its canonical target and byte digest are\n"
                 << "continuity-checked across both child-process phases.\n"
                 << "Declared output/receipt/capability paths are cleared before their phase,\n"
-                << "then must be recreated as regular files by that child invocation.\n";
+                << "then must be recreated as regular files by that child invocation.\n"
+                << "Successful dispatch also reports parent-observed steady-clock elapsed\n"
+                << "microseconds for capability process wait, render process wait, receipt\n"
+                << "verification, and the complete harness dispatch.\n";
             std::exit(0);
         } else {
             throw std::invalid_argument("unknown or incomplete argument: " + arg);
@@ -412,6 +425,7 @@ std::string capability_manifest_mismatch(
 int main(int argc, char** argv) {
     try {
         const Args args = parse_args(argc, argv);
+        const auto dispatch_started = SteadyClock::now();
 
         const std::uint64_t request_digest =
             axm::render::continuity_digest64_file(args.request_path);
@@ -497,10 +511,14 @@ int main(int argc, char** argv) {
         }
 
         clear_declared_artifact_path(capabilities_path, "capability manifest");
+        const auto capability_process_started = SteadyClock::now();
         run_required(
             renderer_launch_executable,
             {"--capabilities", args.capabilities_path},
             "capability-discovery");
+        const std::uint64_t capability_process_elapsed_us = elapsed_microseconds(
+            capability_process_started,
+            SteadyClock::now());
         require_fresh_regular_artifact(capabilities_path, "capability manifest");
         if (renderer_process_evidence.has_value()) {
             require_renderer_process_unchanged(*renderer_process_evidence);
@@ -543,10 +561,14 @@ int main(int argc, char** argv) {
         if (renderer_process_evidence.has_value()) {
             require_renderer_process_unchanged(*renderer_process_evidence);
         }
+        const auto render_process_started = SteadyClock::now();
         run_required(
             renderer_launch_executable,
             {args.request_path, args.receipt_path},
             "render");
+        const std::uint64_t render_process_elapsed_us = elapsed_microseconds(
+            render_process_started,
+            SteadyClock::now());
         require_fresh_regular_artifact(output_path, "render output");
         require_fresh_regular_artifact(receipt_path, "receipt");
         if (renderer_process_evidence.has_value()) {
@@ -565,6 +587,7 @@ int main(int argc, char** argv) {
                 "expected capability manifest");
         }
 
+        const auto receipt_verification_started = SteadyClock::now();
         const axm::render::RenderReceiptVerification verification =
             axm::render::verify_render_receipt_files_with_capabilities(
                 args.request_path,
@@ -572,9 +595,16 @@ int main(int argc, char** argv) {
                 args.capabilities_path);
         const axm::render::RenderReceipt receipt =
             axm::render::load_render_receipt_file(args.receipt_path);
+        const std::uint64_t receipt_verification_elapsed_us = elapsed_microseconds(
+            receipt_verification_started,
+            SteadyClock::now());
         if (renderer_process_evidence.has_value()) {
             require_renderer_process_unchanged(*renderer_process_evidence);
         }
+
+        const std::uint64_t external_dispatch_elapsed_us = elapsed_microseconds(
+            dispatch_started,
+            SteadyClock::now());
 
         std::cout << "renderer_process=" << args.renderer_executable << "\n";
         if (renderer_process_evidence.has_value()) {
@@ -609,6 +639,15 @@ int main(int argc, char** argv) {
                   << axm::render::digest64_hex(verification.frame_pixels_digest64) << "\n";
         std::cout << "output_file_digest64="
                   << axm::render::digest64_hex(verification.output_file_digest64) << "\n";
+        std::cout << "timing_clock=steady\n";
+        std::cout << "capability_process_elapsed_us="
+                  << capability_process_elapsed_us << "\n";
+        std::cout << "render_process_elapsed_us="
+                  << render_process_elapsed_us << "\n";
+        std::cout << "receipt_verification_elapsed_us="
+                  << receipt_verification_elapsed_us << "\n";
+        std::cout << "external_dispatch_elapsed_us="
+                  << external_dispatch_elapsed_us << "\n";
         std::cout << "external_process_dispatch=PASS\n";
         return 0;
     } catch (const std::exception& e) {
