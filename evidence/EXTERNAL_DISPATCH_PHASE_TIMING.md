@@ -25,11 +25,41 @@ The existing `external-process-preserves-renderer-process-identity` CTest now al
 - **Continuity:** frozen v1 contracts remain unchanged; timing is additive process evidence printed by the experimental harness.
 - **Wisdom before speed:** this adds a minimal measurement foothold before designing receipt-v2 performance fields, benchmarking policy, or GPU timing semantics.
 
-## Verification gate
+## Verified PR-head evidence
 
-Merge requires the final PR head to pass both repository workflows. The standard CTest lane must exercise the strengthened renderer-process test and require the new timing fields while preserving all existing render/evidence tests.
+PR-head commit `af39371361bc3908097698234b5ab71f38e617fa` passed both repository workflows before this evidence update:
 
-Observed CI values should be recorded here only after a final passing PR-head run; they are one-run observations, not baselines or performance targets.
+- standard `ci`: https://github.com/mike-axiom-mir/axm-render-fabric/actions/runs/34914861977 — PASS;
+- dedicated `ghostscript-external`: https://github.com/mike-axiom-mir/axm-render-fabric/actions/runs/34914861991 — PASS;
+- CTest: **39/39 passed**, including the strengthened `external-process-preserves-renderer-process-identity` timing assertions.
+
+One standard-CI flat-renderer dispatch, with a previously inspected capability manifest bound to the fresh dispatch, observed:
+
+- `timing_clock=steady`;
+- `capability_process_elapsed_us=1373`;
+- `render_process_elapsed_us=5635`;
+- `receipt_verification_elapsed_us=3560`;
+- `external_dispatch_elapsed_us=12992`;
+- `expected_capabilities_match=PASS`;
+- `external_process_dispatch=PASS`;
+- unchanged flat same-intent pixel digest `0x5338e2b2729f1381`.
+
+One standard-CI ImageMagick dispatch observed:
+
+- `timing_clock=steady`;
+- `capability_process_elapsed_us=6169`;
+- `render_process_elapsed_us=20547`;
+- `receipt_verification_elapsed_us=3731`;
+- `external_dispatch_elapsed_us=33815`;
+- `external_process_dispatch=PASS`;
+- unchanged ImageMagick pixel digest `0x8d283e4b5e79fd9f`;
+- unchanged PPM SHA-256 `966bfb0142ed1c297886b2d5b0ce34c73182048d0b5cbc0b95f13edfd6bdfe2c`.
+
+Existing continuity evidence also remained intact in that run: native pixel digest `0x456f404dd94c91da`, native PPM SHA-256 `c81172b1e42106b4a1032e4c6873974202e8a57efb76d7c7cb881ea568aa6beb`, flat 64x36 pixel digest `0x5c48decbca7cb29f`, and native-versus-flat `comparable_v1=YES` while their pixel/output digests remained different.
+
+These timing values are intentionally recorded as **single-run observations only**. They are not baselines, targets, regressions thresholds, or evidence that the flat renderer is intrinsically faster than ImageMagick: the bodies do materially different work and the runner/process/cache state is not controlled as a benchmark.
+
+Because this evidence file update changes the PR head, the final merge gate still requires both workflows to pass again on the new final head.
 
 ## Truth boundary
 
